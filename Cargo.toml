@@ -55,7 +55,7 @@ codegen-units = 1
 [package.metadata.bundle]
 name = "Deck"
 identifier = "com.example.deck"
-icon = ["assets/icon.png"]
+icon = ["assets/icon.icns"]
 category = "public.app-category.productivity"
 short_description = "A small, snappy native desktop app starter built on GPUI."
 long_description = "Deck is a tiny, opinionated GPUI starter you can fork to build your own fast, native desktop app on macOS and Linux (and wire your own AI agent into it)."
