@@ -57,7 +57,7 @@ You need a stable **Rust** toolchain (`rustup`) and:
 | 📋 | Native **menu bar** (App / File / Edit / View) | `main.rs` |
 | 🟣 | Optional **menu-bar / tray mode**, no dock icon — `--features tray` | `tray.rs` |
 | 🔣 | **Lucide** icon set (ISC licensed, bundled) | `gpui-component` |
-| 🖼️ | **App icon** pipeline (svg → png → icns) + `cargo bundle` config | `assets/`, `Cargo.toml` |
+| 🖼️ | **App icon** pipeline (image → squircle → icns) + `cargo bundle` config | `scripts/`, `assets/`, `Cargo.toml` |
 
 The how and why behind each is in **[docs/LEARNINGS.md](docs/LEARNINGS.md)**.
 
@@ -108,7 +108,7 @@ on every push) but isn't daily-driven yet. Linux issues/PRs welcome.
 2. **Change the display name** — `APP_NAME` in `src/main.rs` (drives the menu bar + window title).
 3. **Change the bundle id** — `[package.metadata.bundle].identifier` in `Cargo.toml`, and the
    `QUALIFIER/ORGANIZATION/APPLICATION` consts in `src/settings.rs` (they pick the config-dir path).
-4. **Swap the icon** — drop a 1024×1024 PNG at `assets/icon.png` (or edit `assets/icon.svg` and run `just icon`).
+4. **Swap the icon** — drop a 1024×1024 image at `assets/icon-source.png` and run `just icon` (bakes the macOS squircle tile + shadow and rebuilds `assets/icon.icns`), then `just bundle`.
 5. **Replace the UI** — gut `src/welcome.rs` (and add routes in `src/shell.rs`) and build your thing.
 
 Then ship a real app:
@@ -150,8 +150,11 @@ and add a `KeyBinding::new(...)`.
 deck/
 ├── Cargo.toml            deps + [package.metadata.bundle] + the `tray` feature
 ├── justfile              run · bundle · icon · fmt · check
+├── scripts/
+│   └── make-app-icon.py  source image → squircle .icns (+ optional Linux/web)
 ├── assets/
-│   ├── icon.svg / .png / .icns   source icon + generated app icons
+│   ├── icon-source.png   your 1024² source art (drop it here)
+│   ├── icon.png / .icns  generated app icons (`just icon`)
 ├── src/
 │   ├── main.rs           bootstrap: window, menus, shortcuts, theme, settings
 │   ├── shell.rs          root view: routing (Welcome/Settings) + app state

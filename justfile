@@ -34,24 +34,14 @@ bundle:
 open: bundle
     open "target/release/bundle/osx/Deck.app"
 
-# Regenerate assets/icon.png + assets/icon.icns from assets/icon.svg.
-# Needs cairosvg (pip install cairosvg); falls back to qlmanage if missing.
-# Uses only macOS built-ins (sips, iconutil) for the .icns step.
+# Regenerate assets/icon.png + assets/icon.icns from assets/icon-source.png.
+# Drop your own 1024x1024 image at assets/icon-source.png first (any square art —
+# a render, photo, or logo; an .svg source is rasterized automatically).
+# Bakes in the macOS squircle tile + padding + shadow (macOS does NOT auto-mask).
+# Needs Pillow (pip install pillow); the .icns step uses macOS iconutil.
 icon:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    cd assets
-    if command -v cairosvg >/dev/null; then
-        cairosvg icon.svg -o icon.png -W 1024 -H 1024
-    else
-        qlmanage -t -s 1024 -o . icon.svg >/dev/null && mv icon.svg.png icon.png
-    fi
-    rm -rf icon.iconset && mkdir icon.iconset
-    for sz in 16 32 64 128 256 512; do
-        sips -z $sz $sz       icon.png --out icon.iconset/icon_${sz}x${sz}.png   >/dev/null
-        sips -z $((sz*2)) $((sz*2)) icon.png --out icon.iconset/icon_${sz}x${sz}@2x.png >/dev/null
-    done
-    sips -z 1024 1024 icon.png --out icon.iconset/icon_512x512@2x.png >/dev/null
-    iconutil -c icns icon.iconset -o icon.icns
-    rm -rf icon.iconset
-    echo "→ assets/icon.png + assets/icon.icns regenerated"
+    python3 scripts/make-app-icon.py
+
+# Same, plus a freedesktop hicolor tree + .desktop entry under dist/linux/.
+icon-linux:
+    python3 scripts/make-app-icon.py --linux --web
