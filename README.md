@@ -51,6 +51,7 @@ You need a stable **Rust** toolchain (`rustup`) and:
 |  | Feature | Where |
 |---|---|---|
 | 🪟 | Native window + custom transparent title bar (traffic lights on macOS, window controls on Linux) | `main.rs`, `shell.rs` |
+| ⌘ | **Command palette** (⌘K) — fuzzy search, grouped, keyboard-first, recents | `command_palette.rs` |
 | 🎨 | Dark/light theme + a live **accent picker** (6 colors) | `theme.rs` |
 | ⚙️ | **Settings page** with preferences saved as JSON in the OS config dir | `settings.rs`, `settings_view.rs` |
 | ⌨️ | **Keyboard shortcuts** → actions → menu items | `main.rs`, `shell.rs` |
@@ -76,6 +77,35 @@ dir and applies live:
 Preferences live at `~/Library/Application Support/<bundle-id>/settings.json`. The storage layer is
 ~40 lines of `serde` + the `directories` crate — see [LEARNINGS §3](docs/LEARNINGS.md#settings) for
 how it compares to `confy` and Zed's settings system.
+
+## Command palette (⌘K)
+
+<img src="docs/screenshot-palette.png" width="640" alt="Deck command palette">
+
+Press **⌘K** (Ctrl K) for a Superhuman/Linear-style launcher: a floating, top-anchored panel with
+**fuzzy search**, commands **grouped by category**, a **Recent** group, **live shortcut chips**, and
+full keyboard control (`↑↓` move, `↵` run, `esc` close). It's built on the same searchable-list
+primitive (`List` + `ListDelegate`) that powers Zed's own palette, so the search box, navigation and
+selection come for free — the whole feature is one heavily-commented file you own:
+`src/command_palette.rs` (registry, fuzzy matcher, delegate, overlay, and its tests).
+
+**Adding a command is one line.** Edit the `commands()` registry at the top of the file. If it maps
+to an action you already have, just point at it — the palette dispatches the *same* action as the
+hotkey and the menu bar, so the three can never drift, and the trailing shortcut chip is derived
+**live from your keymap** (no hand-syncing labels):
+
+```rust
+Command {
+    id: "home", title: "Go Home", icon: IconName::ArrowLeft,
+    category: Category::Navigation, keywords: &["back", "welcome"],
+    run: Run::Action(|| Box::new(GoBack)),
+}
+```
+
+The fuzzy matcher is a compact, dependency-free subsequence scorer (rewards prefixes, word
+boundaries and consecutive runs; highlights the matched characters) — small enough to read and
+tweak. See [LEARNINGS §16](docs/LEARNINGS.md#command-palette) for the load-bearing details (why a
+custom overlay over a dialog, how commands are run via the list's event, and the gotchas).
 
 ## Menu-bar / tray-first apps (`--features tray`)
 
@@ -135,6 +165,7 @@ Point it at the Anthropic API (Claude), a local model, or your own runtime — D
 
 | Shortcut | Action |
 |---|---|
+| `⌘K` | Command palette |
 | `⌘N` | New (fires the `NewItem` action) |
 | `⌘,` | Open Settings |
 | `⌘[` | Back |
@@ -155,6 +186,7 @@ deck/
 ├── src/
 │   ├── main.rs           bootstrap: window, menus, shortcuts, theme, settings
 │   ├── shell.rs          root view: routing (Welcome/Settings) + app state
+│   ├── command_palette.rs the ⌘K palette: command registry + fuzzy search + overlay
 │   ├── welcome.rs        the home page (replace me)
 │   ├── settings.rs       the persisted Settings struct (serde + config dir)
 │   ├── settings_view.rs  the settings page UI
