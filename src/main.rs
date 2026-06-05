@@ -7,6 +7,7 @@
 //! Fork checklist: rename the crate in `Cargo.toml`, change `APP_NAME` and the
 //! bundle identifier, swap `assets/icon.png`, then start editing the views.
 
+mod command_palette;
 mod settings;
 mod settings_view;
 mod shell;
@@ -31,7 +32,15 @@ pub const APP_NAME: &str = "Deck";
 // to, hang a menu item off of, and handle in a view or globally. Add your own here.
 gpui::actions!(
     deck,
-    [Quit, About, OpenSettings, ToggleTheme, NewItem, GoBack]
+    [
+        Quit,
+        About,
+        OpenSettings,
+        ToggleTheme,
+        NewItem,
+        GoBack,
+        TogglePalette
+    ]
 );
 
 fn main() {
@@ -59,6 +68,7 @@ fn main() {
                 KeyBinding::new("secondary-,", OpenSettings, None),
                 KeyBinding::new("secondary-shift-d", ToggleTheme, None),
                 KeyBinding::new("secondary-[", GoBack, None),
+                KeyBinding::new("secondary-k", TogglePalette, None),
             ]);
 
             // 4. Global action handlers. View-local actions (NewItem, OpenSettings,
@@ -102,7 +112,11 @@ fn main() {
                 Menu {
                     name: "View".into(),
                     disabled: false,
-                    items: vec![MenuItem::action("Toggle Light / Dark", ToggleTheme)],
+                    items: vec![
+                        MenuItem::action("Command Palette…", TogglePalette),
+                        MenuItem::separator(),
+                        MenuItem::action("Toggle Light / Dark", ToggleTheme),
+                    ],
                 },
             ]);
 

@@ -1,11 +1,11 @@
-# LEARNINGS — building a native Mac app on GPUI
+# LEARNINGS — building a native desktop app on GPUI
 
-Everything worked out while extracting a fork-ready macOS Deck from Zed's GPUI and
-gpui-component. This is the "why" behind every decision in the repo, and the direct answers to:
+Notes from building Deck on Zed's GPUI and gpui-component — the "why" behind the repo's
+decisions, and direct answers to:
 *how nice can the theme get? what icons can I use? how do I save preferences? can I have a
 menu-bar icon, a dock icon, a tray-first app? how do app icons work? how much should I bundle?*
 
-All API claims below were verified against the actual crate sources that this Deck compiles
+All API claims below were verified against the actual crate sources that Deck compiles
 against: `gpui 0.2.2` and `gpui-component 0.5.1` (the published crates.io versions), plus the Zed
 source tree for context. File/line refs point into those.
 
@@ -30,13 +30,13 @@ hold state and re-render on `cx.notify()`), a flexbox API that reads like Tailwi
 (`div().flex().gap_2().p_4()`), a Metal renderer on macOS, an async executor, and native plumbing
 (windows, menu bar, key dispatch). gpui-component adds the *look*: a themeable component library.
 
-The hard parts (native window, GPU text, event loop, retained UI) are **inherited**. What a Deck
+The hard parts (native window, GPU text, event loop, retained UI) are **inherited**. What Deck
 **adds** is the chrome that makes it feel like an app: a window that looks native, a menu bar,
 shortcuts, a theme that isn't harsh, a place to store preferences, an icon, and a `.app`.
 
 ---
 
-## 2. The dependency decision (the most important learning) {#dependencies}
+## 2. The dependency decision {#dependencies}
 
 The confusion isn't "Zed gpui vs. a longbridge fork" — that's a myth. crates.io `gpui` **is Zed's own
 official crate** (owners: Max Brunsfeld, Mikayla Maki, the `zed-industries` team; repo
@@ -82,7 +82,7 @@ including the wgpu Linux renderer and the `gpui_platform` / `gpui_web` crate spl
 simpler, but frozen on the Oct-2025 gpui snapshot. Full bump procedure + the fallback swap:
 [UPGRADING.md](UPGRADING.md).
 
-What the Deck does to stay portable: the only macOS-only code is the tray's dock-hiding
+What Deck does to stay portable: the only macOS-only code is the tray's dock-hiding
 (`setActivationPolicy`), which is `#[cfg(target_os = "macos")]` and whose `objc2` deps are
 **target-gated** in `Cargo.toml` (`[target.'cfg(target_os = "macos")'.dependencies]`) so a Linux
 `--features tray` build never tries to compile Apple crates. Shortcuts use `secondary` (= ⌘ on macOS,
@@ -155,9 +155,9 @@ rings, even the tray icon) recolors instantly. That's `Shell::set_accent` → `t
 
 gpui-component can also hot-load `.theme` JSON files via
 `ThemeRegistry::watch_dir(dir, cx, on_load)` (it ships a JSON schema). Great if you want
-user-editable / downloadable themes. The Deck builds the palette in code instead because it's
+user-editable / downloadable themes. Deck builds the palette in code instead because it's
 self-contained and lets the accent picker mutate it live — but the JSON path is there when you want
-it. **Omakase pick: dark by default, indigo accent, in-code palette.**
+it. **Default: dark by default, indigo accent, in-code palette.**
 
 ---
 
@@ -166,7 +166,7 @@ it. **Omakase pick: dark by default, indigo accent, in-code palette.**
 > *"Ship a basic preference-saving infrastructure. What's the common, mainstream way? What does Zed
 > do? What's the most Rust path?"*
 
-**The mainstream Rust path, and what this Deck ships:** a `serde`-derived struct written as JSON
+**The mainstream Rust path, and what Deck ships:** a `serde`-derived struct written as JSON
 into the OS config directory, found with the [`directories`](https://crates.io/crates/directories)
 crate. No database, no framework. The entire layer is ~40 lines (`settings.rs`):
 
@@ -192,7 +192,7 @@ The two non-obvious bits: **`#[serde(default)]`** so old config files survive yo
 
 | Approach | What it is | When |
 |---|---|---|
-| **`directories` + `serde_json`** (this Deck) | ~40 lines you own, fully visible | Most apps. Mainstream, zero magic. |
+| **`directories` + `serde_json`** (Deck) | ~40 lines you own, fully visible | Most apps. Mainstream, zero magic. |
 | [`confy`](https://crates.io/crates/confy) | One-liner wrapper over exactly the above (`confy::load`/`store`, TOML by default) | You want it in two lines and don't care where the file is. |
 | **Zed's settings system** | Layered **default + user** JSON, file-watched, hot-reloaded, schema-validated, merged into typed structs | A large app with a settings *file* users hand-edit. Overkill for a starter — it lives across several Zed crates, not in gpui. |
 | `rusqlite` / a KV store | A real database | Lots of rows (history, documents), queries, migrations. |
@@ -201,7 +201,7 @@ The two non-obvious bits: **`#[serde(default)]`** so old config files survive yo
 `default.json`, merges a user `settings.json` on top, watches both for changes, and deserializes into
 typed `Settings` structs via `serde` + `schemars` (the JSON Schema powers editor autocomplete). It's
 excellent and it's a lot — the right altitude for an editor users configure by hand, the wrong one
-for a fork-and-hack starter. **Omakase pick: `directories` + `serde_json`**, with `confy` as the
+for a fork-and-hack starter. **Default: `directories` + `serde_json`**, with `confy` as the
 two-line alternative noted in the code.
 
 ---
@@ -214,8 +214,7 @@ two-line alternative noted in the code.
 [Lucide](https://lucide.dev), and `gpui-component-assets` bundles the SVGs (verified: the files are
 `arrow-right.svg`, `book-open.svg`, `bot.svg`, … — verbatim Lucide names). **Lucide is ISC-licensed**
 — a permissive, MIT-equivalent license, free for personal and commercial use; just keep the
-copyright notice if you redistribute the icons (this repo's [NOTICE](../NOTICE) does). So you get a
-clean, modern, ~80-icon set for free, today.
+copyright notice if you redistribute the icons (this repo's [NOTICE](../NOTICE) does). So you get a modern ~80-icon set for free.
 
 To make them render you must register the asset source once — `IconName::*` is blank otherwise:
 
@@ -243,7 +242,7 @@ font; to ship a custom typeface you embed the `.ttf` and set `Theme.font_family`
 
 ## 7. The app menu bar — native, you just declare it {#menu}
 
-> *"Can we have a menu bar?"* — Yes, fully native, and one of the nicest things you inherit.
+> *"Can we have a menu bar?"* — Yes, fully native.
 
 Build it declaratively and hand it over with `cx.set_menus(Vec<Menu>)`:
 
@@ -274,7 +273,7 @@ yourself if needed.)
 > *"Can we have a dock icon? A menu-bar (tray) icon? A tray-first, no-dock app? Does that fit GPUI —
 > the tray won't be GPUI-rendered, but I don't want a second rendering system."*
 
-**Your instinct is exactly right.** Here's the full picture:
+Short version: yes, and it adds no second renderer. The full picture:
 
 ### Dock icon — automatic
 
@@ -288,10 +287,9 @@ icon + the binary name; `cargo bundle` shows yours. Develop with `run`, ship wit
 
 A macOS menu-bar item (`NSStatusItem`) is, like the dock icon, **just a native image plus a native
 menu**. There is nothing to "render" with a UI framework — so adding one introduces **no second
-rendering system**. The tray icon is drawn by AppKit; every *window* you show stays 100% GPUI. This
-is the key insight that makes it fit cleanly.
+rendering system**. The tray icon is drawn by AppKit; every *window* you show stays 100% GPUI.
 
-GPUI has **no** status-item API itself (neither does Zed), so it's an opt-in. This Deck ships it
+GPUI has **no** status-item API itself (neither does Zed), so it's an opt-in. Deck ships it
 behind `--features tray` using the [`tray-icon`](https://crates.io/crates/tray-icon) crate (`tray.rs`).
 The integration works because **GPUI's run loop *is* the standard AppKit `NSApplication.run` loop**:
 
@@ -385,7 +383,7 @@ div().on_action(cx.listener(|this, _: &NewItem, _w, cx| { this.count += 1; cx.no
 Keystroke syntax: `cmd`, `ctrl`, `alt`, `shift`, joined with `-`. Gotchas: **`KeyBinding::new`
 panics on a malformed string** (keep them literal); the namespace is a **bare identifier**; **no JSON
 keymap loader** exists (you bind in code — typo-checked at compile time); and for a key to reach a
-view's `on_action`, the view must be in the focus path (the Deck `track_focus`es its root and
+view's `on_action`, the view must be in the focus path (Deck `track_focus`es its root and
 focuses it in `Shell::new`).
 
 ---
@@ -398,7 +396,7 @@ text, tooltip, tree`. Sharp edges that bite forkers:
 
 - **No `Modal`** — the modal primitive is **`Dialog`** (+ a `Sheet` drawer), and overlay layers
   (Dialog/Sheet/Notification) are invisible unless your top view is `Root::new` *and* you emit
-  `Root::render_dialog_layer/…`. The Deck's pages are plain views to avoid this until you need it.
+  `Root::render_dialog_layer/…`. Deck's pages are plain views to avoid this until you need it.
 - **`Input` is stateful** — `Input::new(&entity)` needs an `InputState` *entity* you own and keep
   alive (`cx.new(|cx| InputState::new(window, cx))`); subscribe to `InputEvent::Change` to react.
   (The settings page does exactly this for the display-name field.)
@@ -408,7 +406,7 @@ text, tooltip, tree`. Sharp edges that bite forkers:
 
 ## 13. Inherited vs. added — the crisp summary
 
-| Inherited from Zed/GPUI + gpui-component (free) | Added by this Deck |
+| Inherited from Zed/GPUI + gpui-component (free) | Added by Deck |
 |---|---|
 | Native window, Metal renderer, GPU text, async executor | Frameless title bar wiring; app bootstrap order |
 | Dock icon (automatic); the **menu bar API** | The system menu bar; keyboard shortcuts → actions |
@@ -431,10 +429,13 @@ text, tooltip, tree`. Sharp edges that bite forkers:
 8. Tray icon: create on the main thread in `app.run` and **keep the handle alive** (§8).
 9. `KeyBinding::new` panics on bad strings; the `actions!` namespace is a bare ident.
 10. No `Modal` (use `Dialog`); `Input` is stateful (`InputState` entity); no bundled font.
+11. `List` selection is owned by `ListState` — never set `.selected()` in `render_item` (§16).
+12. `.searchable(true)` lives on `ListState`, not the `List` element; `render_initial` *replaces* the
+    list on an empty query (§16).
 
 ---
 
-## 15. Omakase decisions (chosen → rejected)
+## 15. Decisions (chosen → rejected)
 
 - **The matched git pair** — `gpui` + `gpui_platform` (Zed git) + `gpui-component` (Longbridge git),
   pinned via the committed `Cargo.lock`, bumped ~monthly → rejected freezing on the crates.io snapshot
@@ -448,5 +449,63 @@ text, tooltip, tree`. Sharp edges that bite forkers:
 - **`cargo bundle` block + a single `icon.png`** → rejected a Zed-style signing/notarizing script.
 - **Tray as an opt-in feature, window stays GPUI** → rejected any second rendering system; the status
   item is a native image, nothing more.
+- **Command palette = one file on `List`/`ListDelegate`, commands dispatch real actions** → rejected a
+  separate registry crate, a bespoke modal, and a heavyweight background fuzzy matcher (§16).
 - **A few small files, ~700 lines** → rejected a sprawling, over-engineered monorepo. Read it in ten minutes,
   then start deleting.
+
+---
+
+## 16. The command palette — `List` + `ListDelegate` {#command-palette}
+
+The ⌘K palette (`src/command_palette.rs`) is one file. It leans on the same primitive Zed's own
+command palette uses: a **searchable list driven by a delegate**. In gpui-component that's
+`ListState<D>` + the `ListDelegate` trait (Zed calls it `Picker` / `PickerDelegate`). You get the
+search input, virtualized scrolling, `↑↓` navigation, `↵`/`esc` handling and selection styling for
+free; you supply the *rows*, the *match*, and the *chrome*.
+
+**The shape.** A flat `commands()` registry at the top of the file (the one edit surface) → a
+`PaletteDelegate` that filters those into grouped `sections` → the `List` renders them. A command
+runs by **dispatching a real `gpui` action** (`Run::Action(|| Box::new(OpenSettings))`), so a palette
+entry, its hotkey, and its menu item all funnel through the *same* `Shell` handler and can never
+drift. The trailing shortcut chip is derived **live from the keymap** via
+`Kbd::binding_for_action(&*action, None, window)` — change a `KeyBinding` in `main.rs` and the chip
+follows.
+
+**Running a command across the view boundary.** The delegate can't reach `Shell` (its methods only
+get `&mut Context<ListState<Self>>`). So `confirm()` just stashes the chosen command in a `pending`
+field, and `Shell` — subscribed to the list via `cx.subscribe_in(&palette, window, …)` — drains it on
+`ListEvent::Confirm`, **closes the palette first**, then dispatches (so the action lands on `Shell`'s
+focus tree, not the palette's). `ListEvent::Cancel` (esc) just closes. This event bridge is the same
+pattern the kit uses internally.
+
+**The fuzzy matcher** is ~40 lines, no deps: a subsequence scorer that rewards matches at the start,
+at word boundaries (after a space/`-`/`_`) and camelCase humps, and consecutive runs, while penalizing
+gaps and length — and returns the matched **byte ranges** so the title can highlight them with
+`StyledText::with_highlights`. It runs synchronously: for dozens of commands that's microseconds, so
+(unlike Zed) there's no background-threaded matcher or char-bag prefilter. If you grow to thousands of
+candidates, that's where you'd add them.
+
+**Custom overlay, not `Dialog`.** The panel is a child the `Shell` renders when open — a scrim
+(`background.opacity(0.55)`, correct in both modes) + a `popover`-surfaced panel, anchored near the
+top (the Superhuman signature, vs. centered). `gpui-component`'s `Dialog` has title/footer chrome and
+its layer only paints if your root view calls `Root::render_dialog_layer` itself — a child overlay is
+less wiring and gives full control of position and motion.
+
+### Gotchas that cost real time
+
+- **Don't set `.selected()` in `render_item`** — `ListState` tracks the selected index and applies
+  the selection style to whatever item you return. The index you store in the delegate is only there
+  so `confirm()` knows what was chosen.
+- **`.searchable(true)` is a `ListState` method, not a `List`-element method.** Build it on the state
+  (`ListState::new(delegate, …).searchable(true)`); the `List` element only takes `.search_placeholder(…)`.
+- **`render_initial` *replaces* the list when the query is empty.** If you want a navigable empty-state
+  (recents + all commands), leave `render_initial` as the default `None` and populate the sections in
+  `perform_search("")` instead.
+- **Unique element ids for duplicated rows.** A command can appear in "Recent" *and* its category, so
+  the row id is `(cmd.id, section)` — a bare `cmd.id` would collide and misbehave.
+- **Animate opacity, not offset.** The panel sits inside a centering flex (not absolutely
+  positioned), so the entrance fades with `.with_animation(.., |el, t| el.opacity(t))`; animating
+  `.top()` there would be shaky.
+- **Pre-select on open.** A fresh list with an empty query has nothing selected, and `↵` only fires
+  when something is selected — so `open_palette` calls `set_selected_index(first_row)` before focusing.

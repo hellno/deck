@@ -20,8 +20,8 @@ mode. Then delete the welcome screen and build your app — or wire in your own 
 framework; [gpui-component](https://github.com/longbridge/gpui-component) adds a shadcn-style
 component kit on top. Deck is the boilerplate you'd otherwise rewrite for every project — native
 window, menu bar, shortcuts, a non-harsh theme, saved settings, an app icon, a shippable bundle —
-done once, opinionated, and kept small: ~700 lines across a few files, pure crates.io deps, no
-submodules, no vendoring, no `node`.
+done once, opinionated, and kept small: ~700 lines across a few files, fresh git-pinned GPUI
+(reproducible via `Cargo.lock`), no submodules, no vendoring, no `node`.
 
 ## Quick start
 
@@ -42,7 +42,7 @@ fast. You need **`rustup`** — the exact Rust version is pinned in `rust-toolch
   ```bash
   sudo apt install build-essential pkg-config libxcb1-dev libxkbcommon-dev \
     libxkbcommon-x11-dev libwayland-dev libvulkan-dev libfontconfig1-dev \
-    libfreetype6-dev libssl-dev          # + libgtk-3-dev libayatana-appindicator3-dev for --features tray
+    libfreetype6-dev libssl-dev          # + libgtk-3-dev libayatana-appindicator3-dev libxdo-dev for --features tray
   ```
 
 > Same code on both. CI builds macOS **and** Linux on every push — see [Platforms](#platforms).
@@ -52,6 +52,7 @@ fast. You need **`rustup`** — the exact Rust version is pinned in `rust-toolch
 |  | Feature | Where |
 |---|---|---|
 | 🪟 | Native window + custom transparent title bar (traffic lights on macOS, window controls on Linux) | `main.rs`, `shell.rs` |
+| ⌘ | **Command palette** (⌘K) — fuzzy search, grouped, keyboard-first, recents | `command_palette.rs` |
 | 🎨 | Dark/light theme + a live **accent picker** (6 colors) | `theme.rs` |
 | ⚙️ | **Settings page** with preferences saved as JSON in the OS config dir | `settings.rs`, `settings_view.rs` |
 | ⌨️ | **Keyboard shortcuts** → actions → menu items | `main.rs`, `shell.rs` |
@@ -77,6 +78,35 @@ dir and applies live:
 Preferences live at `~/Library/Application Support/<bundle-id>/settings.json`. The storage layer is
 ~40 lines of `serde` + the `directories` crate — see [LEARNINGS §3](docs/LEARNINGS.md#settings) for
 how it compares to `confy` and Zed's settings system.
+
+## Command palette (⌘K)
+
+<img src="docs/screenshot-palette.png" width="640" alt="Deck command palette">
+
+Press **⌘K** (Ctrl K) for a Superhuman/Linear-style launcher: a floating, top-anchored panel with
+**fuzzy search**, commands **grouped by category**, a **Recent** group, **live shortcut chips**, and
+full keyboard control (`↑↓` move, `↵` run, `esc` close). It's built on the same searchable-list
+primitive (`List` + `ListDelegate`) that powers Zed's own palette, so the search box, navigation and
+selection come for free — the whole feature is one heavily-commented file you own:
+`src/command_palette.rs` (registry, fuzzy matcher, delegate, overlay, and its tests).
+
+**Adding a command is one line.** Edit the `commands()` registry at the top of the file. If it maps
+to an action you already have, just point at it — the palette dispatches the *same* action as the
+hotkey and the menu bar, so the three can never drift, and the trailing shortcut chip is derived
+**live from your keymap** (no hand-syncing labels):
+
+```rust
+Command {
+    id: "home", title: "Go Home", icon: IconName::ArrowLeft,
+    category: Category::Navigation, keywords: &["back", "welcome"],
+    run: Run::Action(|| Box::new(GoBack)),
+}
+```
+
+The fuzzy matcher is a compact, dependency-free subsequence scorer (rewards prefixes, word
+boundaries and consecutive runs; highlights the matched characters) — small enough to read and
+tweak. See [LEARNINGS §16](docs/LEARNINGS.md#command-palette) for the load-bearing details (why a
+custom overlay over a dialog, how commands are run via the list's event, and the gotchas).
 
 ## Menu-bar / tray-first apps (`--features tray`)
 
@@ -136,6 +166,7 @@ Point it at the Anthropic API (Claude), a local model, or your own runtime — D
 
 | Shortcut | Action |
 |---|---|
+| `⌘K` | Command palette |
 | `⌘N` | New (fires the `NewItem` action) |
 | `⌘,` | Open Settings |
 | `⌘[` | Back |
@@ -156,6 +187,7 @@ deck/
 ├── src/
 │   ├── main.rs           bootstrap: window, menus, shortcuts, theme, settings
 │   ├── shell.rs          root view: routing (Welcome/Settings) + app state
+│   ├── command_palette.rs the ⌘K palette: command registry + fuzzy search + overlay
 │   ├── welcome.rs        the home page (replace me)
 │   ├── settings.rs       the persisted Settings struct (serde + config dir)
 │   ├── settings_view.rs  the settings page UI

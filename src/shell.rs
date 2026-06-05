@@ -4,17 +4,21 @@
 //! `settings_view.rs` as `impl Shell` methods (Rust lets you split an inherent
 //! impl across modules), so this file stays focused on state + navigation.
 
+use std::collections::VecDeque;
+
 use gpui::{
     div, App, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, Render, Styled, Window,
+    IntoElement, ParentElement, Render, Styled, Subscription, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::{InputEvent, InputState},
+    list::ListState,
     v_flex, ActiveTheme, IconName, TitleBar,
 };
 
+use crate::command_palette::PaletteDelegate;
 use crate::settings::{Settings, ThemeModePref};
 use crate::theme::{self, Accent};
 use crate::{GoBack, NewItem, OpenSettings, ToggleTheme, APP_NAME};
@@ -31,6 +35,13 @@ pub struct Shell {
     pub settings: Settings,
     pub name_input: Entity<InputState>,
     pub created: usize,
+    /// The command palette's list, while it's open (rebuilt fresh each open so the
+    /// query always starts empty). `None` = closed. See `command_palette.rs`.
+    pub palette: Option<Entity<ListState<PaletteDelegate>>>,
+    /// Keeps the palette's event subscription alive while it's open.
+    pub palette_sub: Option<Subscription>,
+    /// Recently-run command ids, most-recent first — the palette's "Recent" group.
+    pub recents: VecDeque<&'static str>,
 }
 
 impl Shell {
@@ -59,6 +70,10 @@ impl Shell {
             settings,
             name_input,
             created: 0,
+            palette: None,
+            palette_sub: None,
+            // Seed a few sensible "recents" so the palette is never blank on first open.
+            recents: ["settings", "new", "theme"].into_iter().collect(),
         }
     }
 
@@ -191,16 +206,24 @@ impl Render for Shell {
             Route::Welcome => self.render_welcome(cx).into_any_element(),
             Route::Settings => self.render_settings(window, cx).into_any_element(),
         };
+        // The command palette overlay (when open), painted over everything else.
+        let palette = self
+            .palette
+            .clone()
+            .map(|p| self.render_palette(&p, cx).into_any_element());
 
         v_flex()
             .size_full()
+            .relative()
             .bg(background)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_new_item))
             .on_action(cx.listener(Self::on_open_settings))
             .on_action(cx.listener(Self::on_go_back))
             .on_action(cx.listener(Self::on_toggle_theme))
+            .on_action(cx.listener(Self::on_palette_toggle))
             .child(title_bar)
             .child(content)
+            .children(palette)
     }
 }
