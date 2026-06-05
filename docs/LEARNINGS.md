@@ -407,6 +407,9 @@ text, tooltip, tree`. Sharp edges that bite forkers:
 8. Tray icon: create on the main thread in `app.run` and **keep the handle alive** (§8).
 9. `KeyBinding::new` panics on bad strings; the `actions!` namespace is a bare ident.
 10. No `Modal` (use `Dialog`); `Input` is stateful (`InputState` entity); no bundled font.
+11. `List` selection is owned by `ListState` — never set `.selected()` in `render_item` (§16).
+12. `.searchable(true)` lives on `ListState`, not the `List` element; `render_initial` *replaces* the
+    list on an empty query (§16).
 
 ---
 
@@ -422,5 +425,63 @@ text, tooltip, tree`. Sharp edges that bite forkers:
 - **`cargo bundle` block + a single `icon.png`** → rejected a Zed-style signing/notarizing script.
 - **Tray as an opt-in feature, window stays GPUI** → rejected any second rendering system; the status
   item is a native image, nothing more.
+- **Command palette = one file on `List`/`ListDelegate`, commands dispatch real actions** → rejected a
+  separate registry crate, a bespoke modal, and a heavyweight background fuzzy matcher (§16).
 - **A few small files, ~700 lines** → rejected a sprawling, over-engineered monorepo. Read it in ten minutes,
   then start deleting.
+
+---
+
+## 16. The command palette — `List` + `ListDelegate` {#command-palette}
+
+The ⌘K palette (`src/command_palette.rs`) is one file. It leans on the same primitive Zed's own
+command palette uses: a **searchable list driven by a delegate**. In gpui-component that's
+`ListState<D>` + the `ListDelegate` trait (Zed calls it `Picker` / `PickerDelegate`). You get the
+search input, virtualized scrolling, `↑↓` navigation, `↵`/`esc` handling and selection styling for
+free; you supply the *rows*, the *match*, and the *chrome*.
+
+**The shape.** A flat `commands()` registry at the top of the file (the one edit surface) → a
+`PaletteDelegate` that filters those into grouped `sections` → the `List` renders them. A command
+runs by **dispatching a real `gpui` action** (`Run::Action(|| Box::new(OpenSettings))`), so a palette
+entry, its hotkey, and its menu item all funnel through the *same* `Shell` handler and can never
+drift. The trailing shortcut chip is derived **live from the keymap** via
+`Kbd::binding_for_action(&*action, None, window)` — change a `KeyBinding` in `main.rs` and the chip
+follows.
+
+**Running a command across the view boundary.** The delegate can't reach `Shell` (its methods only
+get `&mut Context<ListState<Self>>`). So `confirm()` just stashes the chosen command in a `pending`
+field, and `Shell` — subscribed to the list via `cx.subscribe_in(&palette, window, …)` — drains it on
+`ListEvent::Confirm`, **closes the palette first**, then dispatches (so the action lands on `Shell`'s
+focus tree, not the palette's). `ListEvent::Cancel` (esc) just closes. This event bridge is the same
+pattern the kit uses internally.
+
+**The fuzzy matcher** is ~40 lines, no deps: a subsequence scorer that rewards matches at the start,
+at word boundaries (after a space/`-`/`_`) and camelCase humps, and consecutive runs, while penalizing
+gaps and length — and returns the matched **byte ranges** so the title can highlight them with
+`StyledText::with_highlights`. It runs synchronously: for dozens of commands that's microseconds, so
+(unlike Zed) there's no background-threaded matcher or char-bag prefilter. If you grow to thousands of
+candidates, that's where you'd add them.
+
+**Custom overlay, not `Dialog`.** The panel is a child the `Shell` renders when open — a scrim
+(`background.opacity(0.55)`, correct in both modes) + a `popover`-surfaced panel, anchored near the
+top (the Superhuman signature, vs. centered). `gpui-component`'s `Dialog` has title/footer chrome and
+its layer only paints if your root view calls `Root::render_dialog_layer` itself — a child overlay is
+less wiring and gives full control of position and motion.
+
+### Gotchas that cost real time
+
+- **Don't set `.selected()` in `render_item`** — `ListState` tracks the selected index and applies
+  the selection style to whatever item you return. The index you store in the delegate is only there
+  so `confirm()` knows what was chosen.
+- **`.searchable(true)` is a `ListState` method, not a `List`-element method.** Build it on the state
+  (`ListState::new(delegate, …).searchable(true)`); the `List` element only takes `.search_placeholder(…)`.
+- **`render_initial` *replaces* the list when the query is empty.** If you want a navigable empty-state
+  (recents + all commands), leave `render_initial` as the default `None` and populate the sections in
+  `perform_search("")` instead.
+- **Unique element ids for duplicated rows.** A command can appear in "Recent" *and* its category, so
+  the row id is `(cmd.id, section)` — a bare `cmd.id` would collide and misbehave.
+- **Animate opacity, not offset.** The panel sits inside a centering flex (not absolutely
+  positioned), so the entrance fades with `.with_animation(.., |el, t| el.opacity(t))`; animating
+  `.top()` there would be shaky.
+- **Pre-select on open.** A fresh list with an empty query has nothing selected, and `↵` only fires
+  when something is selected — so `open_palette` calls `set_selected_index(first_row)` before focusing.
