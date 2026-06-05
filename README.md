@@ -30,13 +30,14 @@ git clone <your-fork> my-app && cd my-app
 cargo run
 ```
 
-The first build compiles GPUI from source (a few minutes, once); after that, rebuilds are fast.
-You need a stable **Rust** toolchain (`rustup`) and:
+The first build compiles GPUI from Zed's git from source (a few minutes, once); after that, rebuilds are
+fast. You need **`rustup`** — the exact Rust version is pinned in `rust-toolchain.toml` (currently
+`1.95.0`, matching Zed) and installed automatically on first build. Plus:
 
 - **macOS 11+** — **Xcode Command Line Tools** (`xcode-select --install`). Apple Silicon + Intel.
   Renders with **Metal**.
 - **Linux** — a GPU with **Vulkan** plus the dev libraries below. Renders with **Vulkan** (via
-  `blade`); X11 and Wayland both work.
+  `wgpu`); X11 and Wayland both work.
 
   ```bash
   sudo apt install build-essential pkg-config libxcb1-dev libxkbcommon-dev \
@@ -94,7 +95,7 @@ is macOS-only and cfg-gated. Architecture in [LEARNINGS §8](docs/LEARNINGS.md#t
 | | macOS | Linux |
 |---|---|---|
 | Core app (window, theme, settings, menus, shortcuts) | ✅ verified, daily-driven | ✅ builds in CI¹ |
-| Renderer | Metal | Vulkan (via `blade`), X11 + Wayland |
+| Renderer | Metal | Vulkan (via `wgpu`), X11 + Wayland |
 | App icon / bundle | `.app` + `.icns` (`just bundle`) | `cargo bundle --format deb`² |
 | Tray (`--features tray`) | ✅ verified | ⚠️ builds (libappindicator); may need a GTK loop¹ |
 
@@ -161,15 +162,18 @@ deck/
 │   ├── theme.rs          refined palette + accent colors
 │   └── tray.rs           optional menu-bar tray icon (feature = "tray")
 └── docs/
-    └── LEARNINGS.md      deep dive: theme, icons, storage, menu bar, dock, tray
+    ├── LEARNINGS.md      deep dive: theme, icons, storage, menu bar, dock, tray
+    └── UPGRADING.md      how to bump gpui / gpui-component to the latest stable safely
 ```
 
 ## Tech stack & the dependency story
 
 ```toml
-gpui = "0.2"                  # longbridge/blade fork of Zed's GPUI (Metal on macOS, Vulkan on Linux)
-gpui-component = "0.5"        # shadcn-style component kit built on top
-gpui-component-assets = "0.5" # bundled Lucide icon SVGs + fonts
+# Default: fresh GPUI from git (Metal on macOS, wgpu on Linux). Pinned via Cargo.lock.
+gpui                  = { git = "https://github.com/zed-industries/zed" }                            # Zed's UI framework (HEAD)
+gpui_platform         = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }   # windowing + renderer (post crate-split)
+gpui-component        = { git = "https://github.com/longbridge/gpui-component" }                     # shadcn-style kit, dev'd vs gpui HEAD
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }                     # bundled Lucide SVGs + fonts
 serde / serde_json            # settings serialization
 directories                   # find the OS config dir (XDG on Linux, App Support on macOS)
 # optional, behind `--features tray`:
@@ -177,10 +181,15 @@ tray-icon                     # native status item (cross-platform)
 objc2 / objc2-app-kit         # macOS-only, dock hiding (target-gated to cfg(macos))
 ```
 
-The GPUI pieces are **pure crates.io** — the matched, published pair, no git dependencies and no
-vendoring. (Zed's own `gpui` is git-only; gpui-component publishes against the `gpui` 0.2 fork,
-which is what makes a clean `cargo run` fork possible.) Full rationale in
-[LEARNINGS §2](docs/LEARNINGS.md#dependencies).
+The GPUI pieces come **from git**, pinned to exact commits by the committed `Cargo.lock`. `gpui` is
+Zed's *own* framework (repo `zed-industries/zed`); `gpui-component` (Longbridge) is the kit on top, and
+it's developed against Zed's gpui **HEAD** — so the matched git pair is the only way to run *fresh* gpui
+with the component kit. Why not crates.io? Zed publishes `gpui` there only rarely (the `0.2.x` line
+shipped Oct 2025 and nothing since), so the published `gpui-component` is pinned to an ~8-month-old gpui
+snapshot. Deck takes the fresh path and bumps on a cadence (`just bump-gpui`, ~monthly); the plain-stable
+crates.io pair (`gpui = "0.2"` + `gpui-component = "0.5"`) is documented as a zero-git **fallback**. Full
+rationale + bump/fallback procedures in [LEARNINGS §2](docs/LEARNINGS.md#dependencies) and
+[UPGRADING.md](docs/UPGRADING.md).
 
 ## Credits & license
 
