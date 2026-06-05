@@ -41,7 +41,7 @@ You need a stable **Rust** toolchain (`rustup`) and:
   ```bash
   sudo apt install build-essential pkg-config libxcb1-dev libxkbcommon-dev \
     libxkbcommon-x11-dev libwayland-dev libvulkan-dev libfontconfig1-dev \
-    libfreetype6-dev libssl-dev          # + libgtk-3-dev libayatana-appindicator3-dev for --features tray
+    libfreetype6-dev libssl-dev          # + libgtk-3-dev libayatana-appindicator3-dev libxdo-dev for --features tray
   ```
 
 > Same code on both. CI builds macOS **and** Linux on every push — see [Platforms](#platforms).
