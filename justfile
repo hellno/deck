@@ -17,12 +17,29 @@ run-release:
 run-tray:
     cargo run --features tray
 
-# Format + lint (both feature configurations).
+# Format the code.
 fmt:
     cargo fmt
+
+# Lint both feature configurations (clippy, warnings = errors). For the FULL gate use `just ci`.
 check:
-    cargo clippy --all-targets -- -D warnings
-    cargo clippy --all-targets --features tray -- -D warnings
+    cargo clippy --locked --all-targets -- -D warnings
+    cargo clippy --locked --all-targets --features tray -- -D warnings
+
+# The full CI gate, locally — the whole Definition of Done in one command. Run this before you
+# call a change done; it mirrors .github/workflows/ci.yml so green here == green in CI.
+ci:
+    cargo fmt --all --check
+    cargo clippy --locked --all-targets -- -D warnings
+    cargo clippy --locked --all-targets --features tray -- -D warnings
+    cargo test --locked
+
+# Auto-fix everything fixable: clippy's machine-applicable suggestions + formatting.
+# Re-run `just ci` afterwards to confirm green. (--allow-dirty so it works mid-edit.)
+fix:
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features tray
+    cargo fmt
 
 # Bump the git GPUI stack to the latest upstream commits, then rebuild.
 # Reproducibility lives in Cargo.lock — commit it (and rust-toolchain.toml if you

@@ -10,6 +10,26 @@ default-run = "deck"
 name = "deck"
 path = "src/main.rs"
 
+# Lint policy lives in the manifest (not just CI flags) so rust-analyzer and `cargo check` surface
+# the same rules CI enforces — zero feedback latency for an agent. Deck is a SINGLE crate (no
+# [workspace]), so these go directly under the package as [lints.rust] / [lints.clippy] — NOT
+# [workspace.lints] and NOT `[lints] workspace = true` (that indirection is only for multi-crate
+# workspaces). Rationale + the deliberately-rejected lints: docs/AGENTIC-ENGINEERING.md.
+[lints.rust]
+unused_must_use = "deny"  # an ignored Result from a fallible IO/serde call is a silent bug
+# deny, NOT forbid: Deck has zero unsafe today; deny still compiles and leaves a reviewed escape
+# hatch (// SAFETY: + scoped #[allow(unsafe_code)]) if a future objc2 bump needs raw unsafe in the
+# tray path. forbid cannot be locally overridden, so it would brick that build with no way out.
+unsafe_code = "deny"
+
+[lints.clippy]
+# priority = -1 is REQUIRED on a lint *group* so the individual lints below can still override it.
+# warn here (not deny) + `-D warnings` in CI is the reth/alloy convention: a toolchain bump that
+# adds new clippy lints then can't brick local `cargo build` — only CI goes red.
+all = { level = "warn", priority = -1 }
+todo = "deny"       # a stray todo!() left on a code path panics in production
+dbg_macro = "deny"  # dbg! debug noise left behind by an agent
+
 [dependencies]
 # Fresh GPUI, straight from Zed's git — the DEFAULT channel (Metal on macOS, wgpu on
 # Linux). `gpui-component` is developed against Zed's gpui HEAD, so the only way to pair
