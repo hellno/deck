@@ -1,6 +1,8 @@
 //! The Settings page — rendered by `Shell` when the route is `Settings`.
-//! Every control writes straight back into `self.settings` and calls `.save()`,
-//! and theme changes apply live. This is the template for your own settings.
+//! Every control writes straight back into `self.settings` and persists via
+//! `save_best_effort()`, and theme changes apply live. These controls fire at
+//! click frequency, so a synchronous best-effort write is fine here; a text
+//! field would persist on blur instead (see `shell.rs`). Template for your own.
 
 use gpui::{
     div, px, rgb, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
@@ -106,7 +108,7 @@ impl Shell {
             .checked(self.settings.launch_minimized)
             .on_click(cx.listener(|this, checked: &bool, _, cx| {
                 this.settings.launch_minimized = *checked;
-                this.settings.save();
+                this.settings.save_best_effort();
                 cx.notify();
             }))
             .into_any_element();

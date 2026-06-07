@@ -41,7 +41,7 @@
 //! - **A new group.** Add a `Category` variant and list it in `Category::ORDER`.
 //! - **Persistent recents.** Recents are session-only by design (no disk I/O on the
 //!   hot path). To survive restarts: add `recents: Vec<String>` to `Settings`, load it
-//!   in `Shell::new`, and call `self.settings.save()` from `record_recent` — the same
+//!   in `Shell::new`, and call `self.settings.save_best_effort()` from `record_recent` — the same
 //!   pattern `settings.rs` already uses for `display_name`.
 
 use std::ops::Range;
