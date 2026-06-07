@@ -180,13 +180,15 @@ fn path() -> Option<PathBuf> {
         .map(|d| d.config_dir().join("settings.json"))
 }
 // load(): read_to_string + serde_json::from_str, fall back to Default on missing/corrupt
-// save(): create_dir_all + serde_json::to_string_pretty + write   (best-effort)
+// save() -> io::Result: create_dir_all + to_string_pretty + write; save_best_effort() logs & moves on
 ```
 
 On macOS that resolves to `~/Library/Application Support/com.Example.Deck/settings.json`. Load
-once at startup (so the theme reflects saved prefs before the first paint); save on every change.
-The two non-obvious bits: **`#[serde(default)]`** so old config files survive you adding fields, and
-**using the platform config dir** (not `~/.myapp`) so you're a good macOS citizen.
+once at startup (so the theme reflects saved prefs before the first paint); persist **off the UI hot
+path** — at a coarse boundary (blur/commit) or the background executor, never on a per-keystroke
+`InputEvent::Change` ([§17](#performance)). The two non-obvious bits: **`#[serde(default)]`** so old
+config files survive you adding fields, and **using the platform config dir** (not `~/.myapp`) so
+you're a good macOS citizen.
 
 ### The spectrum of options
 
@@ -509,3 +511,53 @@ less wiring and gives full control of position and motion.
   `.top()` there would be shaky.
 - **Pre-select on open.** A fresh list with an empty query has nothing selected, and `↵` only fires
   when something is selected — so `open_palette` calls `set_selected_index(first_row)` before focusing.
+
+---
+
+## 17. Performance — Linear-esque snappiness, the native way {#performance}
+
+> *"How is [Linear so fast](https://performance.dev/how-is-linear-so-fast-a-technical-breakdown) — and
+> which of it applies here?"*
+
+Linear feels instant for **one** reason: the read/write hot path never touches the network. It reads
+from an in-memory object graph, applies edits optimistically, and syncs in the background — the
+[local-first thesis](https://www.inkandswitch.com/essay/local-first/) (*"there is never a need for the
+user to wait for a request to a server to complete"*). Almost everything else people credit — IndexedDB
+caching, code-splitting, service-worker precaching, "animate only `transform`/`opacity`," tuning away
+React's vdom diff — is **web-platform tax a native binary simply doesn't pay**, and GPUI hands you the
+result for free: the heap is your data store, there's no bundle to split, layout is rebuilt each frame
+(no reflow to dodge), and clean views are skipped (no vdom to diff). Don't port those tricks. These are
+the rules that *do* carry over:
+
+**1. Never block the UI thread on I/O.** Apply the change to in-memory state and `cx.notify()` *now*;
+persist *later*, off the hot path. This is the one spot the bare starter originally got wrong: the name
+field called `Settings::save()` — a full synchronous `fs::write` of the whole struct — on **every
+keystroke** (`InputEvent::Change`). It now mirrors the value into memory on change and persists on
+**blur** (`shell.rs`), so the disk never sees the keystroke hot path. `Settings::save()` returns an
+`io::Result` for load-bearing writes; `save_best_effort()` is the UI entry point (logs and moves on — a
+lost preference must never crash or stall the UI). For a heavier write, **debounce onto the background
+executor** instead:
+
+```rust
+// store `save_task: Option<Task<()>>` on the view; each keystroke drops the prior
+// task (cancelling its timer), coalescing a burst into one write off the render thread:
+let settings = self.settings.clone();
+self.save_task = Some(cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+    cx.background_executor().timer(Duration::from_millis(250)).await;
+    cx.background_executor().spawn(async move { settings.save_best_effort() }).await;
+}));
+```
+
+**2. `cx.notify()` the smallest entity that owns the change.** `notify` marks the view *and all its
+ancestors* dirty, so volatile state held as plain fields on `Shell` re-renders the whole page each
+tick. Give it its own small `Entity<T>` (as `name_input` and the palette already are) so its churn —
+and the root's — stay insulated. GPUI tracks reads per *entity*, not per field, so this is a modeling
+choice, not free infrastructure.
+
+**3. Render large collections with `uniform_list` / `list`,** never a flex column of N children — a
+naive column rebuilds N elements + N Taffy layout nodes every dirty frame. The virtualized lists render
+only the visible window. The ⌘K palette already uses `ListState`; reach for `uniform_list` once a fork
+renders real rows.
+
+**4. Filter and search in memory.** The palette matches its registry with a synchronous, dependency-
+free fuzzy scorer — no I/O, no background thread per keystroke (§16). Do the same for your own pickers.

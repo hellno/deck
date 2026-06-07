@@ -84,14 +84,30 @@ impl Settings {
         }
     }
 
-    /// Write to disk (best-effort; creates the config dir if needed).
-    pub fn save(&self) {
-        let Some(path) = Self::path() else { return };
+    /// Write to disk, creating the config dir if needed. Returns the IO/serialize
+    /// error so a caller can actually handle it; UI call sites use `save_best_effort`.
+    ///
+    /// Keep this OFF the UI hot path: it rewrites the whole file, cheap only because
+    /// this struct is tiny. Persist at a coarse boundary (blur/commit) or on the
+    /// background executor — never on a per-keystroke `InputEvent::Change`. The "why"
+    /// and the debounce option are in `docs/LEARNINGS.md` §17.
+    pub fn save(&self) -> std::io::Result<()> {
+        let Some(path) = Self::path() else {
+            return Ok(());
+        };
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent)?;
         }
-        if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(&path, json);
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        std::fs::write(&path, json)
+    }
+
+    /// Best-effort persist for UI call sites: a lost preference write should never
+    /// crash or block the UI, so we log and move on. Prefer `save` (and real error
+    /// handling) when the write is load-bearing — e.g. an agent fork's chat history.
+    pub fn save_best_effort(&self) {
+        if let Err(err) = self.save() {
+            eprintln!("deck: could not save settings: {err}");
         }
     }
 }

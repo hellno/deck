@@ -55,11 +55,16 @@ impl Shell {
                 .default_value(settings.display_name.clone())
         });
 
-        // Persist the text field as the user types (and on blur).
+        // Mirror the field into memory on every keystroke (cheap, no I/O) so the
+        // Welcome greeting stays live — but only touch the disk on blur, off the
+        // per-keystroke hot path. `save` is cheap today, but this is the rule an
+        // agent fork (streaming tokens through this same view) must inherit. §17.
         cx.subscribe(&name_input, |this, state, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change | InputEvent::Blur) {
                 this.settings.display_name = state.read(cx).value().to_string();
-                this.settings.save();
+            }
+            if matches!(event, InputEvent::Blur) {
+                this.settings.save_best_effort();
             }
         })
         .detach();
@@ -89,7 +94,7 @@ impl Shell {
 
     pub fn set_accent(&mut self, accent: Accent, cx: &mut Context<Self>) {
         self.settings.accent = accent;
-        self.settings.save();
+        self.settings.save_best_effort();
         self.apply_theme(cx);
         // Keep the menu-bar tray icon (if running) in sync with the accent.
         #[cfg(feature = "tray")]
@@ -99,7 +104,7 @@ impl Shell {
 
     pub fn set_mode(&mut self, mode: ThemeModePref, cx: &mut Context<Self>) {
         self.settings.theme_mode = mode;
-        self.settings.save();
+        self.settings.save_best_effort();
         self.apply_theme(cx);
         cx.notify();
     }

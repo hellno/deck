@@ -68,6 +68,29 @@ These mirror the manifest lints; internalize them before writing code:
 - Deck is an app, so `.expect()` on genuinely-infallible GPUI handles is fine
   (see `main.rs` and `tray.rs`). Prefer `Result`/`?` everywhere else.
 
+## Performance — keep the UI thread sacred
+
+Deck should feel instant for the same reason Linear does: **nothing on the UI hot
+path waits on I/O or the network.** A native GPUI app already gets most of "how is
+Linear so fast" for free — the heap is your data store, there's no bundle to split,
+no reflow, no vdom diff — so these are the few rules that still need discipline.
+Full contrast and rationale: `docs/LEARNINGS.md` §17.
+
+- **Never block the render thread on I/O.** Apply changes to in-memory state and
+  `cx.notify()` now; persist off the hot path — at a coarse boundary (blur/commit)
+  or on `cx.background_executor()`, never on a per-keystroke `InputEvent::Change`.
+  Use `Settings::save_best_effort()` for UI writes; `save()` returns the `io::Result`
+  when a write is load-bearing.
+- **`cx.notify()` the smallest entity that changed.** It marks the view *and its
+  ancestors* dirty, so volatile state held as fields on `Shell` repaints the whole
+  page. Give it its own `Entity<T>` (like `name_input` and the palette), not the root.
+- **Render large lists with `uniform_list` / `list`,** never a flex column of N
+  children (it rebuilds N elements + N layout nodes every frame).
+- **Filter and search in memory** — the ⌘K palette already does (synchronous, no
+  I/O per keystroke). Do the same for your own pickers.
+- **Prefer an in-memory `Entity` over a data store** — any new store or network
+  client is a new dep, which is approval-gated (Definition of Done #4).
+
 ## Design work
 
 Ground UI changes in `README.md` and `docs/LEARNINGS.md` (real screenshots and
