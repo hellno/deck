@@ -1,0 +1,9 @@
+# rustfmt for Deck. intentionally minimal = near-zero churn; Deck is already fmt-clean so
+# enabling the CI `cargo fmt --check` gate needs no baseline-format commit.
+
+edition = "2021"
+max_width = 100
+
+# STABLE-channel keys ONLY. The pinned 1.95.0 stable `cargo fmt` SILENTLY ignores nightly-only
+# keys (imports_granularity, group_imports, etc.) — setting them gives a false sense of config
+# that never runs, which is worse than not setting them at all. don't add nightly keys here.

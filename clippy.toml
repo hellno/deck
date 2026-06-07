@@ -1,0 +1,20 @@
+# clippy knobs for Deck. why these (and why the wallet stuff is omitted): docs/AGENTIC-ENGINEERING.md
+
+msrv = "1.95.0"  # match rust-toolchain.toml
+
+# Deck is an APP, and the command_palette tests unwrap/expect/panic freely — keep them legal.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+
+# doc-valid-idents: only matters once you turn on clippy::pedantic (doc_markdown). Deck enables
+# only clippy::all, which does NOT include doc_markdown, so this key is unnecessary today.
+# uncomment + add YOUR domain idents (proper nouns clippy would otherwise flag) if you go pedantic:
+# doc-valid-idents = ["GPUI", "macOS", "WebGPU", ".."]
+
+# disallowed-methods is the highest-signal clippy tool: a compile error WITH a printed reason.
+# Deck has no footguns to ban out of the box (the wallet originals — mem::forget / thread_rng —
+# are key-zeroize concerns, irrelevant here). ban your own once you find one:
+# disallowed-methods = [
+#     { path = "std::env::set_var", reason = "mutates global env; pass config explicitly" },
+# ]
