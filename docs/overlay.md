@@ -88,7 +88,8 @@ The foundation: open a second transparent, borderless, always-on-top window anch
       }
   })?;                                                          // handle the Result (unused_must_use)
   ```
-  `WeakEntity::upgrade()` returning `None` is the natural no-op-after-close. `[codex #8]`
+  `WeakEntity::upgrade()` returning `None` is the natural no-op-after-close. `[codex #8]` This is the generic
+  background-job spine — see `docs/background-jobs.md` for the cancellation/retry/HTTP-client pattern the agent-row (#2) reuses.
 - **Lifecycle `[codex #8]`:** subscribe to the main window's close (or `cx.on_window_closed`) and close the overlay with it; on overlay close, remove `OverlayHandle` from globals so later pushes find nothing and no-op; ensure the demo background task observes the weak handle and exits. Decide explicitly whether `cx.quit()` should fire when only the overlay remains (recommend: overlay never keeps the app alive — quit when the main window closes).
 - **Anchoring + the resize question `[codex #3]`:** GPUI *does* expose `Window::resize()` (`window.rs:2217`), but it has no origin/bounds setter (`PlatformWindow`, `platform.rs:614-660`), so a resize anchored bottom-center would drift. v1 **chooses the fixed-canvas approach**: size the window once to the max footprint and animate a child inside it. Document the chosen **dead-zone budget** (see #4/P3). Compute the anchor rect from `cx.primary_display()`/`displays()` (`app.rs:1192,1197`) + `PlatformDisplay::visible_bounds()` (`platform.rs:262`).
 - **Settings:** add `#[serde(default)]` `overlay_enabled: bool` + `overlay_anchor: OverlayAnchor` to `Settings` (`settings.rs:43-61`; update `Default` `:52-61`). Persist via `save_best_effort()` (`settings.rs:108`) at a commit boundary only.
