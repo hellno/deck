@@ -59,13 +59,22 @@ tray-icon = { version = "0.24", optional = true }
 [features]
 default = []
 tray = ["dep:tray-icon", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
+# Floating overlay surfaces (transparent always-on-top PopUp window). macOS-only
+# in v1; on Linux it compiles to a no-op (no LayerShell yet). Reuses the SAME
+# objc2 stack as `tray` (no new compiled crate) and adds raw-window-handle (rwh
+# 0.6 is already in the tree via gpui, so this is a `dep:` surfacing, not a new dep).
+overlay = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation", "dep:raw-window-handle"]
 
-# objc2 is only used to hide the macOS dock icon — pull it on macOS only, so a
-# Linux/Windows `--features tray` build never tries to compile Apple crates.
+# objc2 is only used to hide the macOS dock icon (tray) and harden the overlay
+# panel — pull it on macOS only, so a Linux/Windows `--features tray`/`overlay`
+# build never tries to compile Apple crates.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", optional = true }
 objc2-app-kit = { version = "0.3", optional = true }
 objc2-foundation = { version = "0.3", optional = true }
+# Recover the raw NSView from a gpui Window to harden the overlay panel (objc2
+# bridge). rwh 0.6.2 is already in Cargo.lock via gpui — no new compiled crate.
+raw-window-handle = { version = "0.6", optional = true }
 
 [profile.release]
 strip = true

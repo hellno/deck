@@ -39,7 +39,8 @@ impl ThemeModePref {
 }
 
 /// Everything the app remembers between launches. Add fields freely — the
-/// `#[serde(default)]` makes older config files forward-compatible.
+/// `#[serde(default)]` makes older config files forward-compatible (and lets serde
+/// silently ignore stale keys like a removed `overlay_anchor`).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -47,6 +48,11 @@ pub struct Settings {
     pub accent: Accent,
     pub display_name: String,
     pub launch_minimized: bool,
+    /// Whether to open the floating overlay surface on launch. Defaults `true` so that
+    /// compiling `--features overlay` shows it immediately (mirrors how `--features tray`
+    /// just works); the feature flag is the only *build* gate. Override per-run without
+    /// editing this file via `DECK_OVERLAY=0|1` (see `overlay::install`).
+    pub overlay_enabled: bool,
 }
 
 impl Default for Settings {
@@ -56,6 +62,7 @@ impl Default for Settings {
             accent: Accent::default(),
             display_name: String::new(),
             launch_minimized: false,
+            overlay_enabled: true,
         }
     }
 }

@@ -573,3 +573,35 @@ renders real rows.
 
 **4. Filter and search in memory.** The palette matches its registry with a synchronous, dependency-
 free fuzzy scorer — no I/O, no background thread per keystroke (§16). Do the same for your own pickers.
+
+---
+
+## 18. Floating panels / hovering windows — transparent HUD surfaces {#overlay}
+
+Building a floating panel (a status rail, a recording pill, a HUD) means opening a *second*
+always-on-top window and making it genuinely transparent. The whole working example is `src/overlay/`
+(`--features overlay`, macOS; full spec in `docs/overlay.md`). The non-obvious knobs:
+
+- **Open it as a transparent `PopUp`.** `WindowKind::PopUp` (non-activating NSPanel, all-Spaces) +
+  `WindowBackgroundAppearance::Transparent` + `focus: false` + `titlebar: None`, sized to content and
+  anchored off `PlatformDisplay::visible_bounds()`. Never `cx.activate()` to summon it (that steals the
+  foreground app's activation).
+- **Do NOT wrap the view in gpui-component `Root`.** `Root::render` paints `cx.theme().background` over
+  the *entire* window — that's the "dark box" that looks like a transparency failure but isn't. Return
+  the view entity **directly** from the `open_window` build closure. The cost: you lose Root's
+  tooltip/notification/modal layers — fine for a simple surface, so only add `Root` back if you need them.
+- **Kill the window's OS shadow if your panel is heavily rounded.** gpui keeps a macOS window shadow on
+  transparent windows (it gives the window a near-opaque backing on purpose, *"to avoid broken shadow"*).
+  That shadow is a rounded-**rectangle** the size of the window — behind a `rounded_full` pill it shows
+  as a mismatched frame poking past the rounded ends. Disable it with `NSWindow::setHasShadow(false)` and
+  let the content render its **own** `shadow_lg` instead. A `rounded_xl` panel roughly matches the window
+  rect, so it can keep the window shadow. The knob here is `harden::harden_panel(window, hide_shadow)`:
+  the bottom pill passes `true` (frameless float), the top rail passes `false` (keeps the window shadow).
+- **Stop clicks from stealing focus.** `PopUp` is non-activating, but a click still makes the panel
+  *key* — `setBecomesKeyOnlyIfNeeded(true)` on the NSPanel (also in `harden_panel`) keeps the focused app's
+  text caret. Both of these live in `src/overlay/harden.rs`, the one place with `unsafe` (the raw
+  `NSView → NSWindow` bridge), fenced with `// SAFETY:` + a scoped `#[allow(unsafe_code)]`.
+- **Push state in from the background the usual way.** Stash a `WeakEntity<YourView>` in a `Global`,
+  hop to the main thread, `upgrade()` (None = closed, a free no-op), mutate, `cx.notify()` — the
+  background-job spine (§17, `docs/background-jobs.md`). `WindowKind::PopUp` fires hover even while the
+  app is inactive, so `.hover()`/`.on_click()` on styled `div`s just work.

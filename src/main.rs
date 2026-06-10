@@ -8,6 +8,8 @@
 //! bundle identifier, swap `assets/icon.png`, then start editing the views.
 
 mod command_palette;
+#[cfg(feature = "overlay")]
+mod overlay;
 mod settings;
 mod settings_view;
 mod shell;
@@ -58,6 +60,10 @@ fn main() {
             let settings = Settings::load();
             #[cfg(feature = "tray")]
             let accent = settings.accent;
+            // Snapshot the overlay-relevant settings BEFORE `settings` moves into the
+            // Shell closure (mirrors how `accent` is captured above for tray).
+            #[cfg(feature = "overlay")]
+            let overlay_settings = settings.clone();
             theme::install(cx, settings.accent, settings.theme_mode.to_gpui());
 
             // 3. Keyboard shortcuts. `secondary` = ⌘ on macOS, Ctrl on Linux /
@@ -131,16 +137,25 @@ fn main() {
                 ..Default::default()
             };
 
-            cx.open_window(options, move |window, cx| {
-                let view = cx.new(|cx| Shell::new(settings, window, cx));
-                cx.new(|cx| Root::new(view, window, cx))
-            })
-            .expect("failed to open window");
+            let main_window = cx
+                .open_window(options, move |window, cx| {
+                    let view = cx.new(|cx| Shell::new(settings, window, cx));
+                    cx.new(|cx| Root::new(view, window, cx))
+                })
+                .expect("failed to open window");
 
             // Optional: native menu-bar tray icon + dock hiding (`--features tray`).
             // The tray icon uses the saved accent and restyles live when changed.
             #[cfg(feature = "tray")]
             tray::install(cx, accent);
+
+            // Optional: floating overlay surface (`--features overlay`). Threads the
+            // main window handle so closing it tears the overlay down too. Must NOT
+            // call cx.activate (that would re-activate Deck and steal focus).
+            #[cfg(feature = "overlay")]
+            overlay::install(cx, &overlay_settings, main_window);
+            #[cfg(not(feature = "overlay"))]
+            let _ = main_window;
 
             cx.activate(true);
         });

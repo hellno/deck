@@ -46,9 +46,17 @@ jobs:
       # why: lint the DEFAULT/shipping feature config too — CI only ever linted
       # the tray build, so a clippy regression on the default build slipped through.
       - run: cargo clippy --locked --all-targets -- -D warnings
+      # Overlay feature (macOS: real transparent PopUp window + objc2 panel harden).
+      - run: cargo build --locked --features overlay
+      - run: cargo clippy --locked --all-targets --features overlay -- -D warnings
+      - run: cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
       # why: run the test suite — the command_palette fuzzy-match tests existed but
       # CI never executed them, so an agent could break scoring invisibly.
       - run: cargo test --locked
+      # why: the overlay unit tests (OverlayState/anchor math, JobStatus + HudState
+      # reducers) are gated behind --features overlay, so run them explicitly or they
+      # never execute. The reducers/anchor math are platform-independent — runs on Linux too.
+      - run: cargo test --locked --features overlay
 
   linux:
     runs-on: ubuntu-latest
@@ -84,9 +92,16 @@ jobs:
       # why: lint the DEFAULT/shipping feature config too — CI only ever linted
       # the tray build, so a clippy regression on the default build slipped through.
       - run: cargo clippy --locked --all-targets -- -D warnings
+      # Overlay feature (Linux: compile-only no-op path — no LayerShell in v1).
+      - run: cargo build --locked --features overlay
+      - run: cargo clippy --locked --all-targets --features overlay -- -D warnings
       # why: run the test suite — the command_palette fuzzy-match tests existed but
       # CI never executed them, so an agent could break scoring invisibly.
       - run: cargo test --locked
+      # why: the overlay unit tests (OverlayState/anchor math, JobStatus + HudState
+      # reducers) are gated behind --features overlay, so run them explicitly or they
+      # never execute. The reducers/anchor math are platform-independent — runs on Linux too.
+      - run: cargo test --locked --features overlay
 
   # why: supply-chain gate (advisories / bans / sources / licenses) via cargo-deny.
   # deny.toml is already seeded and passes locally (`cargo deny check` is green). This lands
