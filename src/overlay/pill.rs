@@ -1,15 +1,19 @@
 //! Bottom-center recording pill (`--features overlay`). Anchored bottom-center.
 //!
-//! A small frosted pill with a circular record button. `recording` flips on click
-//! (and via the `space` ToggleRecording action wired in `mod.rs`); while recording,
-//! the button shows a pulsing red fill. The window is transparent — paint only the pill.
+//! A single frosted, borderless pill — content-sized and centered, floating via its own
+//! `shadow_lg`. The window's OS shadow is disabled (`mod.rs` → `harden_panel(.., true)`)
+//! so the window is invisible and the `rounded_full` pill isn't framed by a mismatched
+//! rounded-rectangle window shadow. Inside: a subtle light circular button + an inline
+//! label. Idle shows an empty circle next to "Start"; while `recording` a solid red dot
+//! fills the circle next to a bold "Recording" (no animation — a steady, calm "on"
+//! state). The WHOLE pill is the click target; `recording` also flips via the `space`
+//! ToggleRecording action wired in `mod.rs`.
 
 use gpui::{
-    div, px, Animation, AnimationExt, App, Context, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, StatefulInteractiveElement, Styled, Window,
+    div, px, App, Context, FocusHandle, Focusable, FontWeight, InteractiveElement, IntoElement,
+    ParentElement, Render, StatefulInteractiveElement, Styled, Window,
 };
 use gpui_component::{h_flex, ActiveTheme};
-use std::time::Duration;
 
 pub struct RecordingPill {
     pub focus_handle: FocusHandle,
@@ -44,48 +48,47 @@ impl Focusable for RecordingPill {
 
 impl Render for RecordingPill {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Copy colors out so the `&Theme` borrow ends before the record button's
-        // `cx.listener` re-borrows cx as `&mut` (Hsla is Copy). Mirrors hud.rs.
+        // Copy colors out so the `&Theme` borrow ends before the pill's `cx.listener`
+        // re-borrows cx as `&mut` (Hsla is Copy). Mirrors rail.rs / the old hud.rs.
         let theme = cx.theme();
-        let border = theme.border;
         let surface = theme.popover;
-        let danger = theme.danger;
+        let foreground = theme.foreground;
         let muted = theme.muted_foreground;
+        let danger = theme.danger;
 
-        // Button base tints: muted at rest, slightly stronger on hover/press. The red
-        // signal lives in the inner dot, not the button fill.
-        let rest = muted.opacity(0.25);
-        let hover = muted.opacity(0.4);
-        let press = muted.opacity(0.55);
+        // Subtle, light circular button (theme-aware faint tint — never the old heavy
+        // dark disc). It holds a solid red dot ONLY while recording; idle it's empty.
+        let mut circle = div()
+            .size(px(20.0))
+            .rounded_full()
+            .bg(foreground.opacity(0.1))
+            .flex()
+            .items_center()
+            .justify_center();
+        if self.recording {
+            // Solid red dot — steady, no animation (a calm, clear "on" state).
+            circle = circle.child(div().size(px(10.0)).rounded_full().bg(danger));
+        }
 
-        // The inner record dot. While recording it pulses red (opacity breathes between
-        // 0.4 and 1.0); at rest it's a static muted circle. The two arms are different
-        // element types (animated vs plain `div`), so unify via `into_any_element`.
-        // CRITICAL: `with_animation` returns an opaque animated element — it is the dot
-        // (a CHILD), never the clickable surface. The `.id("pill-record")` button below
-        // is the stateful parent that carries `.on_click`.
-        let dot = if self.recording {
-            div()
-                .size(px(12.0))
-                .rounded_full()
-                .bg(danger)
-                .with_animation(
-                    "pill-record-pulse",
-                    Animation::new(Duration::from_millis(900))
-                        .repeat()
-                        .with_easing(gpui::pulsating_between(0.4, 1.0)),
-                    |el, delta| el.opacity(delta),
-                )
-                .into_any_element()
+        // Inline label on the same baseline as the circle: bold "Recording" while active,
+        // muted "Start" at rest.
+        let (label_text, label_color) = if self.recording {
+            ("Recording", foreground)
         } else {
-            div()
-                .size(px(12.0))
-                .rounded_full()
-                .bg(muted)
-                .into_any_element()
+            ("Start", muted)
         };
+        let mut label = div().text_sm().text_color(label_color);
+        if self.recording {
+            label = label.font_weight(FontWeight::BOLD);
+        }
+        let label = label.child(label_text);
 
-        // Transparent full-window wrapper; the pill sits centered.
+        // Transparent full-window wrapper; the content-sized frosted pill sits centered.
+        // The pill renders its OWN `shadow_lg` for depth, and the window's OS shadow is
+        // disabled in `mod.rs` (`harden_panel(.., true)`) — so the window is invisible
+        // and there's no mismatched rounded-rect frame behind the `rounded_full` pill,
+        // just the pill floating. The pill is the click + P2 focus-spike target: clicking
+        // over another app must NOT steal its key focus — we log the verdict.
         div()
             .size_full()
             .flex()
@@ -94,35 +97,22 @@ impl Render for RecordingPill {
             .child(
                 h_flex()
                     .id("overlay-pill")
-                    .gap_2()
                     .items_center()
+                    .justify_center()
+                    .gap_2()
                     .px_3()
-                    .py_2()
+                    .py_1p5()
                     .rounded_full()
-                    .border_1()
-                    .border_color(border)
-                    .bg(surface.opacity(0.85))
+                    .bg(surface.opacity(0.9))
                     .shadow_lg()
-                    // Record control — also the P2 focus-spike target: clicking over
-                    // another app must NOT steal its key focus; we log the verdict.
-                    .child(
-                        div()
-                            .id("pill-record")
-                            .size(px(28.0))
-                            .rounded_full()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(rest)
-                            .hover(move |s| s.bg(hover))
-                            .active(move |s| s.bg(press))
-                            .cursor_pointer()
-                            .on_click(cx.listener(|this, _ev, window, cx| {
-                                crate::overlay::harden::log_focus_state(window);
-                                this.toggle(cx);
-                            }))
-                            .child(dot),
-                    ),
+                    .cursor_pointer()
+                    .hover(move |s| s.bg(surface.opacity(0.95)))
+                    .on_click(cx.listener(|this, _ev, window, cx| {
+                        crate::overlay::harden::log_focus_state(window);
+                        this.toggle(cx);
+                    }))
+                    .child(circle)
+                    .child(label),
             )
     }
 }

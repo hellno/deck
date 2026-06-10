@@ -142,7 +142,10 @@ fn install_macos(cx: &mut gpui::App, main_window: gpui::WindowHandle<gpui_compon
     // Windows sized to their content (not the old 460x160), shrinking the
     // transparent-pixel dead-zone around each surface.
     let rail_canvas = gpui::size(gpui::px(76.0), gpui::px(300.0));
-    let pill_canvas = gpui::size(gpui::px(220.0), gpui::px(64.0));
+    // The pill is content-sized and centered in this window with its OWN `shadow_lg`;
+    // the window's OS shadow is disabled (see `harden_panel(.., true)`), so this window
+    // is invisible except the pill. Leave margin around the pill for its rendered shadow.
+    let pill_canvas = gpui::size(gpui::px(190.0), gpui::px(64.0));
     let rail_origin = OverlayAnchor::TopRight.origin(vis, rail_canvas, gpui::px(16.0));
     let pill_origin = OverlayAnchor::BottomCenter.origin(vis, pill_canvas, gpui::px(16.0));
 
@@ -174,7 +177,9 @@ fn install_macos(cx: &mut gpui::App, main_window: gpui::WindowHandle<gpui_compon
             rail: rail.downgrade(),
             window: wh,
         });
-        crate::overlay::harden::harden_panel(window);
+        // Keep the rail's window shadow (its `rounded_xl` panel matches the window's
+        // rounded-rect shadow, so there's no mismatched frame).
+        crate::overlay::harden::harden_panel(window, false);
         rail
     }) else {
         return;
@@ -192,7 +197,10 @@ fn install_macos(cx: &mut gpui::App, main_window: gpui::WindowHandle<gpui_compon
             pill: pill.downgrade(),
             window: wh,
         });
-        crate::overlay::harden::harden_panel(window);
+        // Drop the pill window's OS shadow — the pill is `rounded_full` and renders its
+        // own `shadow_lg`, so the window's rounded-rect shadow would just be a mismatched
+        // frame behind it.
+        crate::overlay::harden::harden_panel(window, true);
         pill
     }) else {
         // Keep install transactional: the pill failed to open, so tear down the rail we

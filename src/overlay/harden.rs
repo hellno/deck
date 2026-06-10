@@ -1,5 +1,7 @@
 //! macOS panel hardening (P2): stop the overlay panel stealing key-window focus on
-//! click, plus T0 spike instrumentation. See `docs/overlay.md` CHILD #4.
+//! click, optionally drop the panel's OS window shadow (so a `rounded_full` pill isn't
+//! framed by the window's rounded-rectangle shadow), plus T0 spike instrumentation.
+//! See `docs/overlay.md` CHILD #4.
 //!
 //! The bridge recovers the live NSView from gpui's `HasWindowHandle` raw handle,
 //! walks to its NSWindow, downcasts to NSPanel, and flips `becomesKeyOnlyIfNeeded`.
@@ -7,15 +9,15 @@
 //! wrappers; the single unsafe is fenced with `// SAFETY:` + scoped `#[allow]`.
 
 #[cfg(target_os = "macos")]
-pub fn harden_panel(window: &gpui::Window) {
-    harden_panel_macos(window);
+pub fn harden_panel(window: &gpui::Window, hide_shadow: bool) {
+    harden_panel_macos(window, hide_shadow);
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn harden_panel(_window: &gpui::Window) {}
+pub fn harden_panel(_window: &gpui::Window, _hide_shadow: bool) {}
 
 #[cfg(target_os = "macos")]
-fn harden_panel_macos(window: &gpui::Window) {
+fn harden_panel_macos(window: &gpui::Window, hide_shadow: bool) {
     use objc2::rc::Retained;
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSPanel, NSView};
@@ -51,6 +53,15 @@ fn harden_panel_macos(window: &gpui::Window) {
         return;
     };
     panel.setBecomesKeyOnlyIfNeeded(true);
+    if hide_shadow {
+        // Drop the macOS window shadow for this panel. gpui gives every transparent
+        // window a near-opaque backing so the OS still draws a shadow (gpui_macos
+        // window.rs: "avoid broken shadow"), but that shadow is a rounded *rectangle*
+        // the size of the window — it shows as a mismatched frame behind a `rounded_full`
+        // pill. Killing it lets the pill's own rendered `shadow_lg` be the only depth cue.
+        // The rail passes `false` and keeps its window shadow.
+        panel.setHasShadow(false);
+    }
 }
 
 /// Spike instrumentation (T0): log the panel's key state + the frontmost app so the
