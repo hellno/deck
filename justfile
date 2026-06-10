@@ -17,6 +17,10 @@ run-release:
 run-tray:
     cargo run --features tray
 
+# Run with the floating overlay surface (transparent always-on-top window).
+run-overlay:
+    cargo run --features overlay
+
 # Format the code.
 fmt:
     cargo fmt
@@ -25,6 +29,8 @@ fmt:
 check:
     cargo clippy --locked --all-targets -- -D warnings
     cargo clippy --locked --all-targets --features tray -- -D warnings
+    cargo clippy --locked --all-targets --features overlay -- -D warnings
+    cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
 
 # The full CI gate, locally — the whole Definition of Done in one command. Run this before you
 # call a change done; it mirrors .github/workflows/ci.yml so green here == green in CI.
@@ -32,13 +38,18 @@ ci:
     cargo fmt --all --check
     cargo clippy --locked --all-targets -- -D warnings
     cargo clippy --locked --all-targets --features tray -- -D warnings
+    cargo clippy --locked --all-targets --features overlay -- -D warnings
+    cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
     cargo test --locked
+    cargo test --locked --features overlay
 
 # Auto-fix everything fixable: clippy's machine-applicable suggestions + formatting.
 # Re-run `just ci` afterwards to confirm green. (--allow-dirty so it works mid-edit.)
 fix:
     cargo clippy --fix --allow-dirty --allow-staged --all-targets
     cargo clippy --fix --allow-dirty --allow-staged --all-targets --features tray
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features overlay
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features tray,overlay
     cargo fmt
 
 # Bump the git GPUI stack to the latest upstream commits, then rebuild.

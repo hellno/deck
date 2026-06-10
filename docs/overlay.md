@@ -7,6 +7,42 @@ Independent review: codex (gpt) scored the v1 draft **5/10** executability; this
 ten findings (status-push root-type bug, P2 spike, resize wording, lifecycle, Linux/CI, dead-zone, objc2
 helper, unsafe/dep wording). Corrections are marked `[codex]` inline.
 
+> ## Redesign (2026-06-10) — two small transparent surfaces, no `Root` wrapper
+>
+> The original v1 below shipped **two oversized opaque dark rectangles** out of one
+> 460×160 window (a top-right status row + a bottom Wispr-style toolbar/capsule/banner
+> state machine). User feedback: too big, too many buttons, no hover, too much for a
+> mock. The redesign replaces both with **two small, genuinely-transparent surfaces
+> rendered together** — each its own content-sized transparent `PopUp` window:
+>
+> - **Top-right RAIL** (`src/overlay/rail.rs`) — a small frosted vertical panel: generic
+>   job-status icons → a thin divider → **3 square clickable action buttons** (basic
+>   hover). ≈76×300.
+> - **Bottom-center PILL** (`src/overlay/pill.rs`) — a small frosted pill with a circular
+>   **record button** that pulses red while recording; toggled by click and by `space`
+>   while Deck is focused. ≈220×64.
+>
+> **Root cause of the old "dark box," now fixed:** the overlay wrapped its view in
+> gpui-component `Root`, and `Root::render` paints an opaque `theme.background` over the
+> whole window. The redesign drops `Root` — each window's `open_window` build closure
+> returns the view entity directly — so the window stays transparent and only the frosted
+> panels paint. The simplified surfaces need none of `Root`'s layers (no
+> tooltips/notifications/modals), so skipping it costs nothing. See CHILD #2 / #3 below.
+>
+> **What was removed as over-built:** the single shared 460×160 canvas, the
+> `HudState` dormant→toolbar→capsule→banner machine + `Transition` morphs, tooltips, the
+> inline `Kbd` chips, and the `OverlayState` opacity-pulse show/hide workaround. The
+> `overlay_anchor` user setting + `DECK_OVERLAY_ANCHOR` env override are gone too —
+> `OverlayAnchor` survives only as an **internal positioning helper** in `state.rs`
+> (rail = `TopRight`, pill = `BottomCenter`); `DECK_OVERLAY=0/1` remains the master on/off.
+> The two `unsafe` blocks in `harden.rs` are unchanged; no new deps.
+>
+> The EPIC, CHILD #1, §3/§4 spike history, and the §4 SPIKE RESULT below are retained as
+> accurate **history** (the transparent-PopUp primitive, the P2 focus spike, and the
+> objc2 bridge all carry forward). Where they describe the *old* surfaces (one window,
+> the HUD state machine, the anchor picker) as the **current** design, they are annotated
+> or superseded by the redesign notes inline.
+
 All API claims verified against the pinned sources:
 - GPUI `~/.cargo/git/checkouts/zed-a70e2ad075855582/86effff/crates/{gpui,gpui_macos}`
 - gpui-component `~/.cargo/git/checkouts/gpui-component-95ce574d8a0da8b8/dadfca9`
@@ -23,9 +59,14 @@ Deck opens exactly one normal window (`src/main.rs:134`). There is no way to sho
 | # | Title | Priority | Effort | Depends on | New crate / unsafe |
 |---|-------|----------|--------|-----------|--------------------|
 | 1 | Overlay **primitive** (`--features overlay`, transparent PopUp, edge-anchored, status-push spine, lifecycle) | Critical | ~2d | — | none / none |
-| 2 | **Status-icon row** surface (generic async-job status, no agent-specific UI) | High | ~1d | #1 | none / none |
-| 3 | **Wispr-style HUD pill** surface (dormant→toolbar→recording→banner) | High | ~2d | #1 | none / none |
-| 4 | **macOS interaction hardening** (no-steal-on-click + click-through) — **v1 GATE** for #3; the HUD must work over other apps | Critical | spike + ~1.5d | #1 | none / likely 1 scoped unsafe |
+| 2 | **Top-right rail** surface (generic job-status icons + divider + 3 square action buttons; no agent-specific UI) `[redesign]` | High | ~1d | #1 | none / none |
+| 3 | **Bottom-center recording pill** surface (record button + `space`-while-focused toggle + red pulse) `[redesign]` | High | ~1d | #1 | none / none |
+| 4 | **macOS interaction hardening** (no-steal-on-click + click-through) — **v1 GATE** for #3; the surfaces must work over other apps | Critical | spike + ~1.5d | #1 | none / likely 1 scoped unsafe |
+
+> `[redesign 2026-06-10]` #2 is now the top-right **rail** and #3 the bottom-center
+> **recording pill** (two separate transparent windows, no `Root`). The old #3 HUD state
+> machine (dormant→toolbar→recording→banner) is removed. See the redesign note above and
+> the rewritten CHILD #2 / #3 sections.
 
 ### Dependency graph
 ```
@@ -58,6 +99,12 @@ The foundation: open a second transparent, borderless, always-on-top window anch
 
 ### Implementation details
 - **Module layout:** `src/overlay/mod.rs` (`pub fn install(cx, &Settings)`), `src/overlay/state.rs` (`OverlayState`, `OverlayAnchor` enums + transitions; unit-tested like `command_palette.rs:217`/`:754`), `src/overlay/view.rs` (`struct Overlay` + `impl Render`).
+  **`[redesign 2026-06-10]`** After the redesign the module layout is: `mod.rs` (opens two
+  `Root`-less content-sized windows + the `ToggleRecording` action/`space` binding + weak
+  handles), `rail.rs` (top-right rail, **new**), `pill.rs` (recording pill, was `hud.rs`),
+  `status.rs` (pure `JobStatus` logic, was `status_row.rs`), `state.rs` (`OverlayAnchor`
+  positioning helper only — `OverlayState` removed), `harden.rs` (unchanged). `view.rs` is
+  deleted.
 - **macOS-only window, Linux no-op `[codex #9]`:** put the window-opening body behind `#[cfg(target_os = "macos")]`; the non-macOS `install()` is an empty no-op. objc2 deps stay macOS-only (they already are: `Cargo.toml:65-68`). This keeps Linux `cargo clippy --features overlay` compiling green without a LayerShell impl.
 - **Window:** `cx.open_window` (`gpui/src/app.rs:1136`). Inside the closure, build the overlay view first, then wrap it:
   ```rust
@@ -78,6 +125,12 @@ The foundation: open a second transparent, borderless, always-on-top window anch
   })?;
   ```
   `PopUp` already yields non-activating panel + popup level + all-Spaces (`gpui_macos/src/window.rs:714,919,924-927`). Root wrap is required (`main.rs:135-137`) or tooltips/notifications no-op.
+  **`[redesign 2026-06-10]`** This is the precise trap the redesign fixes: `Root::render`
+  paints an opaque `theme.background` over the whole window (the dark box). `Root` is
+  required **only if you need its tooltip / notification / modal layers** — `YES`
+  permits them, it does not require them. The redesigned rail/pill use none of those
+  layers, so they **return the view entity directly** (no `Root`) and the window stays
+  transparent. Wrap in `Root` only when a surface actually needs those overlay layers.
 - **Status-push spine `[codex #1 — the must-fix bug]`:** `cx.open_window` returns `WindowHandle<Root>`, NOT `WindowHandle<Overlay>` — the root is gpui-component `Root` (`root.rs:30`, it holds `view: AnyView`). So you **cannot** do `handle.update(|o| o.state = ...)`; that gives `&mut Root`. Instead stash a **`WeakEntity<Overlay>`** in a GPUI `Global` (`OverlayHandle`, mirroring `tray.rs:29-33` `TrayState`) and push through the *entity*:
   ```rust
   // background work then hop back to the main thread:
@@ -92,7 +145,7 @@ The foundation: open a second transparent, borderless, always-on-top window anch
   background-job spine — see `docs/background-jobs.md` for the cancellation/retry/HTTP-client pattern the agent-row (#2) reuses.
 - **Lifecycle `[codex #8]`:** subscribe to the main window's close (or `cx.on_window_closed`) and close the overlay with it; on overlay close, remove `OverlayHandle` from globals so later pushes find nothing and no-op; ensure the demo background task observes the weak handle and exits. Decide explicitly whether `cx.quit()` should fire when only the overlay remains (recommend: overlay never keeps the app alive — quit when the main window closes).
 - **Anchoring + the resize question `[codex #3]`:** GPUI *does* expose `Window::resize()` (`window.rs:2217`), but it has no origin/bounds setter (`PlatformWindow`, `platform.rs:614-660`), so a resize anchored bottom-center would drift. v1 **chooses the fixed-canvas approach**: size the window once to the max footprint and animate a child inside it. Document the chosen **dead-zone budget** (see #4/P3). Compute the anchor rect from `cx.primary_display()`/`displays()` (`app.rs:1192,1197`) + `PlatformDisplay::visible_bounds()` (`platform.rs:262`).
-- **Settings:** add `#[serde(default)]` `overlay_enabled: bool` + `overlay_anchor: OverlayAnchor` to `Settings` (`settings.rs:43-61`; update `Default` `:52-61`). Persist via `save_best_effort()` (`settings.rs:108`) at a commit boundary only.
+- **Settings:** add `#[serde(default)]` `overlay_enabled: bool` + `overlay_anchor: OverlayAnchor` to `Settings` (`settings.rs:43-61`; update `Default` `:52-61`). Persist via `save_best_effort()` (`settings.rs:108`) at a commit boundary only. **`[redesign 2026-06-10]`** `overlay_anchor` is **removed** — only `overlay_enabled` remains a setting (see §5).
 - **Wiring:** `#[cfg(feature="overlay")] mod overlay;` (`main.rs:15-16`) + `#[cfg(feature="overlay")] overlay::install(cx, &settings);` after the main `open_window` (`main.rs:142-143` pattern). Capture overlay fields before `settings` moves into the Shell closure (mirror `main.rs:60`). **Do not** call `cx.activate(true)` when summoning the overlay — that re-activates Deck and re-introduces P1. `[codex #6]`
 - **Cargo/CI:** `overlay = []` in `[features]` (`Cargo.toml:60`). Add `--features overlay` (and `tray,overlay`) clippy runs to `justfile` `check`/`ci`/`fix` (`:25-42`) and the macOS CI job (`.github/workflows/ci.yml` ~44-51); on the Linux job add a **compile-only** `cargo clippy --features overlay` that exercises the no-op path (~82-89). Add `run-overlay: cargo run --features overlay`.
 
@@ -119,70 +172,138 @@ Visible surface content beyond a placeholder (#2/#3); no-steal-on-click and clic
 
 ---
 
-## CHILD #2 — Status-icon row surface (generic async jobs)
+## CHILD #2 — Top-right rail surface (generic job status + action buttons)
 
-> **Design decision (user):** strictly generic — this surface represents *any* async job, with **no agent/LLM-specific UI or demo**. It's the visual proof of the background-job spine (`docs/background-jobs.md`), nothing more. "Agent" framing is intentionally out.
+> **Redesign (2026-06-10).** This was the "status-icon row." It is now the **top-right
+> rail** (`src/overlay/rail.rs`, a `Rail` view) — its own small transparent window, **no
+> `Root` wrapper**. The generic job-status icons are kept as the top section; below a
+> divider sit **3 square clickable action buttons** with a basic hover state. The
+> "strictly generic, no agent/LLM-specific UI" rule still holds.
+
+> **Design decision (user):** strictly generic — the status section represents *any* async
+> job, with **no agent/LLM-specific UI or demo**. It's the visual proof of the background-job
+> spine (`docs/background-jobs.md`). "Agent" framing is intentionally out.
 
 ### Context
-The first real surface and the cheapest proof of the spine: a vertical row of icons, each a generic background **job**, that animates ("jiggles"/pulses) while running and settles when done. Zero focus/click caveats — ambient status you read, not click.
+A small frosted vertical panel, fixed top-right, sized to content (≈76×300). Three
+stacked sections: ambient job-status icons (the spine proof — animate while running,
+settle when done) → a thin divider → three square action buttons that demonstrate a
+clickable hover control. The user asked for "larger icons or square buttons in a
+vertical line that are clickable / have a basic hover state, that's it."
 
 ### Implementation details
-- Render inside the #1 overlay window, anchored top-right (`OverlayAnchor::TopRight`). Each job = an icon element; "running" = a repeating animation via `with_animation` + `pulsating_between` (`gpui/src/elements/animation.rs:52,247`); jiggle = oscillating translate/rotate (ref `gpui/examples/animation.rs`). `AnimationExt` is **not** in the prelude — `use gpui::{Animation, AnimationExt}`.
-- Job list is a `Vec<JobStatus>` (the `JobStatus` enum from `docs/background-jobs.md` §2) on the `Overlay` entity; a background task mutates it + `cx.notify()` via the #1 spine (the `WeakEntity<Overlay>` path).
-- Theme via `cx.theme()` (`.primary`, `.muted_foreground`) + gpui-component `v_flex`/`Icon` (mirror `welcome.rs:20-27`).
+- **Window:** opened by `mod.rs` as a transparent `PopUp` at `OverlayAnchor::TopRight`,
+  with the view entity returned **directly** (`cx.new(|cx| Rail::new(..))`, no `Root`) so
+  the window stays transparent. Only the rounded frosted panel paints.
+- **Frosted panel:** `v_flex().rounded_xl().border_1().border_color(theme.border)
+  .bg(theme.popover.opacity(0.85)).shadow_lg()`. No real blur/vibrancy (out of scope).
+- **Section 1 — job-status icons:** one icon per `JobStatus` (the enum from
+  `docs/background-jobs.md` §2, now in `src/overlay/status.rs`). `Running` pulses its
+  opacity via `with_animation` + `pulsating_between` (`gpui/src/elements/animation.rs:52,247`);
+  `Done`/`Failed` settle static in distinct theme colors (`success`/`danger`).
+  `AnimationExt` is **not** in the prelude — `use gpui::{Animation, AnimationExt}`. The
+  animated arm is an opaque element — never attach `.id()`/`.on_click()` after
+  `with_animation`. Driven by the demo spine (the `WeakEntity` push from `mod.rs`).
+- **Section 2 — divider:** a thin `div().h(px(1.0))` in `theme.border`.
+- **Section 3 — 3 square action buttons:** styled `div`s, **not** gpui-component `Button`
+  (full control over the square shape + hover; avoids `Root`/tooltip coupling).
+  `div().id(..).size(px(34.0)).rounded_lg().bg(rest).hover(|s| s.bg(hover)).active(|s|
+  s.bg(press)).on_click(..)`. The generic set:
+  - **Pin** — a toggle (`IconName::Star` → `IconName::StarFill`) that flips a `pinned: bool`
+    and stays **visibly filled** (primary tint) while active.
+  - **Eye** and **Bell** — momentary buttons.
+  - Each click prints a one-line stderr marker (e.g. `overlay rail: pin -> true`,
+    `overlay rail: eye clicked`) so "clickable" is verifiable.
+  No tooltips, no `Kbd` chips.
+- **Theme** via `cx.theme()` (`.popover`, `.border`, `.primary`, `.success`, `.danger`,
+  `.muted_foreground`); copy the colors out of the `&Theme` borrow before the button
+  `cx.listener` closures re-borrow `cx` as `&mut`.
 
 ### Acceptance criteria
-1. With `--features overlay`, the overlay shows a top-right vertical icon row.
-2. A mock task marks a job "running" → its icon animates; "done" → it settles, all from a background task (no UI-thread blocking).
-3. Adding/removing jobs repaints only the overlay entity (smallest-entity `cx.notify()` rule).
+1. With `--features overlay`, the rail shows a small top-right frosted panel — **no
+   full-window dark box** (transparent pixels show the app/desktop behind).
+2. A mock task marks a job "running" → its icon pulses; "done"/"failed" → it settles in a
+   distinct color, all from a background task (no UI-thread blocking).
+3. The 3 square buttons each have a visible hover (bg tint) + press state and are
+   clickable; each click has an observable effect (stderr marker and/or, for pin, a
+   filled active state). Repaints only the rail entity (smallest-entity `cx.notify()`).
 4. `just ci` green across the matrix.
 
 ### Testing
 | Layer | What | Count |
 |---|---|---|
-| Unit | job add/remove/status reducer | +2 |
-| Manual | icons animate while running, settle on done | checklist |
-
-### Effort
-~1d: 3h row + per-job animation · 2h board state + mock jobs · 1h tests + verify.
+| Unit | `JobStatus` status reducer (kept in `status.rs`) | +2 |
+| Manual | icons pulse while running, settle on done; buttons hover + click markers | checklist |
 
 ### Out of scope
-Any agent/LLM-specific UI (deliberately generic — wiring a real agent is downstream); click-to-expand a job; persisted job history.
+Any agent/LLM-specific UI (deliberately generic — wiring a real agent is downstream);
+click-to-expand a job; persisted job history; tooltips / `Kbd` chips on the buttons.
 
 ---
 
-## CHILD #3 — Wispr-style HUD pill surface
+## CHILD #3 — Bottom-center recording pill surface
+
+> **Redesign (2026-06-10).** This was the "Wispr-style HUD pill," a
+> dormant→toolbar→capsule→banner state machine with `HudState`, `Transition` morphs,
+> tooltips, and `Kbd` chips. **All of that is removed** as over-built. It is now the
+> **minimal recording pill** (`src/overlay/pill.rs`, a `RecordingPill` view) — its own
+> small transparent window, **no `Root` wrapper**: a frosted pill with a single record
+> button and a `recording: bool`. The user "liked the space-bar recording and the look of
+> the individual elements," not the multi-state toolbar.
 
 ### Context
-The headline surface from the reference video: a bottom-center pill that idles as a tiny handle, expands on hover into a toolbar, morphs into a recording capsule, drops a guidance banner. Pure visual composition — real audio is Phase 3; no-steal/click-through is #4.
+A small frosted compact pill, fixed bottom-center, sized to content (≈220×64): a circular
+record button that pulses/colors red while "recording." The minimal version of the
+space-bar record mock — real audio/dictation stays Phase 3.
 
 ### Implementation details
-- State machine `enum HudState { Dormant, Expanded, Active{label, amplitudes:Vec<f32>}, Banner{text} }` on the `Overlay` entity; `render_dormant/_toolbar/_capsule/_banner` split methods (mirror `welcome.rs` split-render style).
-- Morph (size + opacity) via gpui-component `Transition` (`.width/.height/.fade/.slide_y`) inside the fixed canvas — never resize the window. A `div` can't transform-scale; animate real `.h()`.
-- Hover-expand: `.on_hover(&bool)` (Stateful — needs `.id()`) + `cx.notify()`; the `PopUp` tracking area (`gpui_macos/src/window.rs:904-917`) fires hover even when the app is inactive.
-- Toolbar buttons (`EN`/mic/polish/notes) = gpui-component `Button`; tooltips with shortcut chips via `Tooltip::new(..).action(&A, ctx).build(..)` (`tooltip.rs`) + `Kbd`/`Kbd::binding_for_action` (`kbd.rs`).
-- Recording waveform = N `div` bars animated by `with_animation`; pulse "ready" dot via `pulsating_between`; `Spinner` (`spinner.rs`) for indeterminate.
+- **Window:** opened by `mod.rs` as a transparent `PopUp` at `OverlayAnchor::BottomCenter`,
+  with the view entity returned **directly** (`cx.new(|cx| RecordingPill::new(..))`, no
+  `Root`) so the window stays transparent. Only the rounded frosted pill paints.
+- **Pill + record button:** `h_flex()` frosted container (`rounded_full`, translucent
+  `theme.popover`, border, shadow) holding one circular record button — a styled `div`
+  with `.id("pill-record")`, `.hover()`/`.active()` tints, `.on_click(..)`. The inner
+  record dot is a child: at rest a static `theme.muted_foreground` circle; while
+  `recording` a red (`theme.danger`) circle whose opacity **pulses** via `with_animation`
+  + `pulsating_between`. (`with_animation` returns an opaque element — it is the dot, a
+  child, never the clickable surface; the `.id()` button is the stateful parent that
+  carries `.on_click`.)
+- **Toggle — two paths (Decision: "robustly work and make sense, don't overengineer"):**
+  1. **Click** the record button → flips `recording` + `cx.notify()` (pure
+     `RecordingPill::toggled` reducer).
+  2. A `ToggleRecording` action (`gpui::actions!`) bound to **`space`** (`cx.bind_keys` in
+     `mod.rs`), handled via `cx.on_action`, flips the pill through its weak handle +
+     `cx.notify()` — **while the Deck window is focused.** The binding is scoped to a
+     non-input context (`!Input && !NumberInput && !SearchPanel`) so a space typed in a
+     text field is never eaten. **No global hotkey** — over-other-apps space is Phase 3
+     (overlay windows never hold focus, so it would need a global hotkey = real-app
+     territory).
+- **P2 focus spike (kept):** the record-button click also calls
+  `harden::log_focus_state(window)`, logging the panel's `isKeyWindow` + frontmost app —
+  the objective signal for the over-other-apps verdict (see §4 SPIKE RESULT).
 
 ### Acceptance criteria
-1. With `--features overlay`, a bottom-center pill cycles Dormant→Expanded→Active→Banner via a mock trigger, with animated transitions.
-2. Hovering the dormant handle expands the toolbar; leaving collapses it.
-3. Each toolbar button shows a tooltip with its keyboard-shortcut chip.
-4. Active state shows an animated waveform + cancel/confirm; Banner shows a full-width guidance row.
-5. The HUD's max footprint stays within the documented dead-zone budget (#4/P3) so transparent areas don't blanket the bottom of the screen. `[codex #4]`
-6. **Gated on #4 (v1):** with another app foreground, clicking a toolbar button does not steal its keyboard focus, and transparent-area clicks pass through.
-7. `just ci` green across the matrix.
+1. With `--features overlay`, a small bottom-center frosted pill is visible — **no
+   full-window dark box** (transparent pixels show the app/desktop behind).
+2. Clicking the record button toggles a visible recording state (red dot + pulse);
+   clicking again stops it. Pressing **`space` while the Deck window is focused** also
+   toggles it; a space typed in a text input does not.
+3. Repaints only the pill entity (smallest-entity `cx.notify()` rule).
+4. **Gated on #4 (v1):** with another app foreground, clicking the record button does not
+   steal its keyboard focus (logged via `log_focus_state`); transparent-area clicks pass
+   through.
+5. `just ci` green across the matrix.
 
 ### Testing
 | Layer | What | Count |
 |---|---|---|
-| Unit | `HudState` transition reducer | +4 |
-| Manual | hover-expand, tooltips, waveform, banner | checklist |
-
-### Effort
-~2d: 4h state machine + transitions · 4h toolbar + tooltips + Kbd · 4h waveform + capsule + banner · 4h tests + polish.
+| Unit | `RecordingPill::toggled` recording reducer | +1 |
+| Manual | record click + `space`-while-focused toggle; red pulse; focus-spike log | checklist |
 
 ### Out of scope
-Real microphone/dictation; sending text to other apps; click-without-focus-steal (#4); the language popover's actual switching.
+Real microphone/dictation; sending text to other apps; a global hotkey so `space` records
+over other apps (Phase 3); click-without-focus-steal (#4); tooltips / `Kbd` chips; the
+removed toolbar/capsule/banner states and language popover.
 
 ---
 
@@ -310,7 +431,7 @@ Copyable examples live in `…/gpui/examples/`: `window_positioning.rs`, `animat
 | Always-on-top + non-activating + all-Spaces + hover-while-inactive | `WindowKind::PopUp` (NSPanel, `NSPopUpWindowLevel`=101, `CanJoinAllSpaces\|FullScreenAuxiliary`, `NSTrackingActiveAlways`) | `gpui_macos/src/window.rs:714-717,904-927,919` |
 | Borderless | `titlebar: None` | `gpui_macos/src/window.rs:689-708` |
 | Transparent bg | `WindowBackgroundAppearance::Transparent` | `gpui/src/platform.rs:1693` |
-| Required root wrap (else tooltips/notifications no-op) | `Root::new(view, window, cx)` | gpui-component `root.rs:89`; `main.rs:135-137` |
+| Root wrap — **only** when you need tooltip/notification/modal layers (it paints an opaque `theme.background`, so the redesigned transparent surfaces skip it) | `Root::new(view, window, cx)` | gpui-component `root.rs:89,513-531`; `main.rs:135-137` |
 | Active display + bounds (anchoring) | `cx.primary_display()`/`cx.displays()`; `PlatformDisplay::visible_bounds()` | `app.rs:1192,1197`; `platform.rs:262` |
 | Window move/bounds | **none** (`resize()` exists `window.rs:2217` but drifts — use fixed canvas) | `platform.rs:614-660` |
 | Run off UI thread (Send) | `cx.background_executor().spawn(fut)` | `executor.rs:89` |
@@ -396,6 +517,12 @@ Add `--features overlay` to justfile + both CI jobs (Linux = compile-only no-op)
 checklist (multi-monitor, fullscreen Space, hot-unplug, sleep/wake, `tray,overlay`). **Acceptance:**
 CHILD #1 criteria 6,7 green.
 
+> **`[redesign 2026-06-10]`** T4/T5 below are superseded by the rewritten CHILD #2 / #3.
+> T4 is now the top-right **rail** (status icons + divider + 3 square action buttons); T5
+> is the bottom-center **recording pill** (record button + `space`-while-focused toggle +
+> red pulse), **not** the HUD state machine. Both render as separate `Root`-less
+> transparent windows. The verbatim steps below are kept as the original plan's history.
+
 ### T4 — #2 status-icon row (strictly generic)
 Top-right vertical row of icons, each a generic `JobStatus` (from `docs/background-jobs.md` §2),
 animating while running via `with_animation`/`pulsating_between`, settling when done; driven by mock
@@ -412,7 +539,110 @@ Finalize `harden_panel` (P2 from T0) and the P3 footprint/transparent-click hand
 within budget; verify a click on a transparent overlay pixel reaches the app below for the chosen
 option). **Acceptance:** CHILD #4 criteria 1-4.
 
-## §4 — SPIKE RESULT (implementing agent fills this in)
-> _T0 outcome goes here: PASS/FAIL, the exact observed behavior (TextEdit focus, panel `isKeyWindow`,
-> button click), which mechanism worked (`becomesKeyOnlyIfNeeded` vs instance-swizzle vs none), any
-> scoped `unsafe` introduced, and the go/renegotiate recommendation. Date it._
+## §4 — SPIKE RESULT
+
+**Status (2026-06-09): SCAFFOLD READY — focus verdict pending one ~5-min human run.** Everything
+machine-verifiable is green; the one thing that needs a real macOS GUI session (does clicking a HUD
+button over TextEdit keep TextEdit's caret) has not been observed in this headless build environment,
+so it is **not** marked PASS. No result was fabricated.
+
+### What is built and compiles green (verified)
+- **P2 mechanism wired:** `src/overlay/harden.rs::harden_panel()` recovers the `NSPanel` from gpui's
+  raw `NSView` (`HasWindowHandle` → `RawWindowHandle::AppKit` → `NSView::window()` →
+  `Retained::downcast::<NSPanel>()`) and calls `panel.setBecomesKeyOnlyIfNeeded(true)` on the main
+  thread (`MainThreadMarker`), storing no native pointer. Called inside the `open_window` build closure.
+- **objc2 fact-corrections vs. the spec draft:** the call chain uses **safe** objc2-app-kit 0.3.2
+  wrappers (`window()`, `downcast`, `setBecomesKeyOnlyIfNeeded`) — **no `msg_send!`**. Exactly **one**
+  scoped `unsafe` per fn (`Retained::retain(ns_view_ptr)`), each with `// SAFETY:` + `#[allow(unsafe_code)]`.
+  `clippy -D warnings` stays green across the matrix; `unsafe_code` count = 2 (both in harden.rs, both
+  the raw-handle bridge — none elsewhere).
+- **Objective instrumentation:** `log_focus_state()` logs the panel's `isKeyWindow` and
+  `NSWorkspace.frontmostApplication().localizedName()` after a click, wired into the HUD toolbar's
+  record button `on_click` — so the verdict is logged, not eyeballed.
+- **No new crate / no lock churn:** the only Cargo.lock delta is a single `raw-window-handle` edge on
+  the `deck` package (rwh 0.6.2 was already in the graph via gpui); macOS-only, optional, under `overlay`.
+
+### Run protocol to fill the verdict (do this on macOS)
+1. Open TextEdit, click into a document so it has a blinking caret; type a few chars.
+2. `cargo run --features overlay` (the overlay opens bottom-center; default anchor = the HUD pill).
+   TextEdit must stay frontmost and keep accepting your keystrokes (window opened `focus:false`,
+   non-activating `PopUp`).
+3. Hover the dormant handle → the toolbar expands. **Click the record button.** Then type again.
+   - **PASS:** TextEdit keeps its caret and keystrokes still land there; logs show
+     `panel isKeyWindow = false` and `frontmost app = "TextEdit"`; the click still registered.
+   - **FAIL:** TextEdit loses the caret / keystrokes stop / logs show the panel became key →
+     follow the §3 T0 escalation ladder (confirm `harden_panel` ran on the real `GPUIPanel`; then
+     try a per-instance `canBecomeKeyWindow → NO` swizzle; if neither holds, renegotiate the #4 gate).
+
+### Recommendation
+The mechanism is the spec's recommended one and is now real, safe, and compiling. Proceed to the human
+focus run to convert this to PASS/FAIL; treat the over-other-apps acceptance (CHILD #3 criterion 6,
+CHILD #4 criteria 1–2) as **provisional** until that run is recorded here.
+
+---
+
+# §5 — Configuration & Settings UI
+
+**Decision (2026-06-09, with the maintainer).** The v1 wiring shipped a confusing **double-gate**:
+`--features overlay` (build) **and** an `overlay_enabled` setting that defaulted **off** with **no UI**,
+so compiling the feature showed nothing — a dead runtime gate that only annoyed whoever works on the
+template, with no benefit to forkers. It is also inconsistent with `--features tray`, which gates on the
+build flag alone. This section locks the replacement. **The gating fix (default-on + env override) is
+implemented; the in-app Settings UI with live apply is the remaining deferred work.**
+
+> **Redesign update (2026-06-10).** There is no longer one overlay window with a
+> user-chosen anchor — there are **two fixed surfaces** (top-right rail + bottom-center
+> pill). So the **anchor is no longer a user preference**: the `overlay_anchor` setting,
+> its `DECK_OVERLAY_ANCHOR` env override, and the planned **anchor picker** are all
+> **removed**. `OverlayAnchor` survives only as an **internal positioning helper** in
+> `src/overlay/state.rs` (rail = `TopRight`, pill = `BottomCenter`). `overlay_enabled` +
+> `DECK_OVERLAY=0/1` are retained as the master on/off for both surfaces. The deferred
+> work below is reframed from "anchor picker" to **per-surface show/hide** (toggle the
+> rail and the pill independently), still deferred.
+
+### Locked model
+- **The Cargo feature is the ONLY compile-time gate.** `--features overlay` decides whether the overlay
+  code + its macOS-only `objc2` / `raw-window-handle` deps compile — exactly like `--features tray`.
+  The feature flag never doubles as a *runtime* enable gate.
+- **Runtime preferences are real, persisted, and applied live** (the "complete, forkable feature"
+  pattern, not a dead gate):
+  - `overlay_enabled: bool` — **defaults `true`** (so `cargo run --features overlay` shows the overlay
+    immediately, mirroring how `--features tray` just works). It is the single persisted "show overlay"
+    preference (covers both surfaces), flipped by a **Settings UI toggle**. Toggling it
+    **opens/closes the live overlay windows** — no restart.
+  - ~~`overlay_anchor: OverlayAnchor`~~ — **removed (redesign).** The two surfaces have
+    fixed anchors; there is no user anchor choice. `OverlayAnchor` is now an internal
+    `state.rs` helper only.
+- **Env override for quick dev/test runs (and a fork hook), no JSON editing** — read in `overlay::install`:
+  - `DECK_OVERLAY=1|0|true|false` — force the overlay on/off for this run.
+  - ~~`DECK_OVERLAY_ANCHOR=…`~~ — **removed (redesign):** no anchor to pick.
+  Unset → use the persisted setting. Unrecognized → warn on stderr + fall back. The parser is pure + unit-tested.
+
+### Implemented (the gating fix)
+1. **`settings.rs`** — `overlay_enabled` defaults `true`, so `cargo run --features overlay` shows the
+   overlay immediately; no JSON editing. The Cargo feature is the only *build* gate.
+2. **`overlay/mod.rs`** — `install` computes the effective `enabled` flag from the setting, overridable by
+   the `DECK_OVERLAY` env var above (pure `parse_*` helper + tests).
+3. **`main.rs`** — the `#[cfg(feature = "overlay")] overlay::install(...)` call honors the
+   (default-on) `overlay_enabled` for the initial open.
+
+### Deferred (the in-app Settings UI + live apply)
+4. **`overlay/mod.rs`** — add runtime controls reusing the existing window factory + `harden_panel`:
+   `show(cx)` / `hide(cx)` (or one `apply_settings(cx, &Settings)`). `hide` closes the overlay windows +
+   clears the handle(s); `show` re-runs the factory + re-stores the global(s). **Re-apply `harden_panel`
+   on every (re)open** (also the multi-monitor re-anchor case). The existing `on_window_closed` teardown
+   must still hold; the overlay still never calls `cx.quit()` / `cx.activate()`. Optional follow-up:
+   **per-surface on/off** — show/hide the rail and the pill independently (e.g. `show_rail` / `show_pill`
+   bools) now that they are separate windows.
+5. **`settings_view.rs`** — add an **Overlay** section, compiled only under `#[cfg(feature = "overlay")]`,
+   with a "Show overlay" toggle (and, as the per-surface follow-up, separate rail/pill toggles — **no
+   anchor picker**). On change: persist via `save_best_effort()` (off the hot path) **and** call the live
+   `show`/`hide`. Wire through `Shell` like the existing theme/accent controls (mirror how `set_accent`
+   already calls into a global / `tray::set_accent`). The env override above stays as the headless/dev path.
+6. **Tests/CI** — matrix unchanged; add a pure unit test for any new reducer-style state if introduced.
+
+### Why this is the right template pattern
+Forkers get exactly one obvious switch — the Cargo feature — to include/exclude the capability **and its
+deps**, plus a complete, copyable example of a persisted, Settings-driven, **live-applied** runtime
+preference: the precise shape they will reuse for their own toggleable surfaces. No dead gates, and
+consistent with `--features tray`.
