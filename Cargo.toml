@@ -76,12 +76,13 @@ codegen-units = 1
 # `cargo bundle` config (batteries included). On macOS → Deck.app; cargo
 # bundle can also emit `deb` on Linux. Run `just bundle`.
 #   cargo install cargo-bundle
-# Drop your own 1024x1024 PNG at assets/icon.png and re-bundle to rebrand.
+# Rebrand: drop a 1024x1024 image at assets/icon-source.png, run `just icon`
+# (bakes the macOS squircle + builds icon.icns), then re-bundle.
 # ---------------------------------------------------------------------------
 [package.metadata.bundle]
 name = "Deck"
 identifier = "com.example.deck"
-icon = ["assets/icon.png"]
+icon = ["assets/icon.icns"]
 category = "public.app-category.productivity"
 short_description = "A small, snappy native desktop app starter built on GPUI."
 long_description = "Deck is a tiny, opinionated GPUI starter you can fork to build your own fast, native desktop app on macOS and Linux (and wire your own AI agent into it)."

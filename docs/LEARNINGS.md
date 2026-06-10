@@ -332,18 +332,30 @@ also skip opening the window at launch and open it on "Show" — a small extensi
 
 ---
 
-## 9. App icons — one PNG in, a `.icns` out
+## 9. App icons — one image in, a `.icns` out
 
 macOS app icons are `.icns` bundles. The pipeline keeps a single source of truth:
 
 ```
-assets/icon.svg  ──cairosvg/qlmanage──▶  assets/icon.png (1024²)  ──sips+iconutil──▶  assets/icon.icns
+assets/icon-source.png  ──scripts/make-app-icon.py──▶  assets/icon.png (1024² squircle master)
+                                    │                                    │
+                              squircle mask                       └─iconutil─▶ assets/icon.icns
+                              + pad + shadow
 ```
 
-`just icon` runs the whole chain (uses macOS built-ins `sips` + `iconutil`). And `cargo bundle` will
-itself turn a single `icon.png` into the `.icns` at build time — so the *minimum* a forker does is
-**replace `assets/icon.png`**. Unlike iOS, macOS does **not** auto-mask icons into the squircle, so
-`icon.svg` draws the rounded tile itself (inset in the 1024 canvas, ~180px corner radius).
+`just icon` runs `scripts/make-app-icon.py` — so the *minimum* a forker does is **replace
+`assets/icon-source.png`** (any square art: a render, photo, or logo — an `.svg` is rasterized
+automatically) and run it. Unlike iOS, macOS does **not** auto-mask icons into the squircle, so the
+script bakes the rounded tile, the ~100px inset, and the soft drop shadow into the artwork itself
+(true continuous-corner superellipse, supersampled). `--linux` / `--web` also emit a freedesktop
+hicolor tree and a full-bleed rounded PNG.
+
+One sharp edge worth knowing: `cargo bundle` 0.11 can build an `.icns` from PNG icons, but a *lone*
+1024² PNG trips `No matching IconType` (1024 only exists as 512@2x), so the bundle config points at
+the finished `icon.icns` directly — `iconutil` handles every size, including 1024.
+
+The script needs Pillow (`pip install pillow`); everything else is macOS built-ins (`iconutil`). For
+a hand-built fallback, `sips -z` each size into an `icon.iconset/` then `iconutil -c icns`.
 
 ---
 
@@ -359,7 +371,7 @@ The whole bundling story is **one block** in `Cargo.toml`, read by
 [package.metadata.bundle]
 name = "Deck"
 identifier = "com.example.deck"
-icon = ["assets/icon.png"]
+icon = ["assets/icon.icns"]
 category = "public.app-category.productivity"
 osx_minimum_system_version = "11.0"
 ```
