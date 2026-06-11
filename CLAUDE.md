@@ -26,7 +26,24 @@ GPUI stack is pinned in `Cargo.lock`; the toolchain is pinned in
 - `theme.rs` — dark/light palette with a selectable brand accent.
 - `tray.rs` — optional menu-bar tray icon + dock hiding (`--features tray`).
 
+## This repo is a cargo-generate template — don't break it
+
+Deck ships via `cargo generate gh:hellno/deck`. The files in `cargo-generate.toml`'s
+`include` list (`Cargo.toml`, `Cargo.lock`, `src/main.rs`, `src/settings.rs`,
+`src/overlay/mod.rs`, `scripts/make-app-icon.py`, `LICENSE`) hold `{{ }}` Liquid tokens,
+so **the raw repo does not `cargo run` / `cargo build`** — render it first.
+
+- Verify template changes with **`just check-template`** (renders a project, then clippy +
+  test). `just run` / `just ci` only work *inside a generated fork*.
+- Renaming a new literal? Add its file to `include` **and** add the `{{ }}` token — a literal
+  in a non-included file ships as "deck" to every fork.
+- **Never** put a literal `{{` or `{%` in an included file (Liquid will try to parse it).
+- CI renders a throwaway project and builds THAT (`.github/workflows/ci.yml`).
+
 ## The loop (verify and self-correct without a CI round-trip)
+
+> In this template repo, the commands below run inside a **generated** project (or via
+> `just check-template`); the raw repo doesn't build. See the template note above.
 
 - Type-check fast with `cargo check`. The full app build pulls GPUI from git, so
   the **first** build is slow; it is cached after that. Run with `just run`
@@ -49,8 +66,9 @@ All four must hold before you call a change done — `just ci` checks them at on
 **Paste the command output as evidence; never claim done while anything is red.**
 
 1. `cargo fmt --all --check` is clean.
-2. clippy `-D warnings` is green on **both** the default build **and**
-   `--features tray` (`just check`).
+2. clippy `-D warnings` is green on **all** feature permutations — the default
+   build, `--features tray`, `--features overlay`, and `--features tray,overlay`
+   (`just check` runs all four).
 3. `cargo test` is green (the `command_palette` fuzzy-match tests live here).
 4. No new or changed deps in `Cargo.toml` / `Cargo.lock` unless explicitly
    approved. The git GPUI stack is bumped **only** via `just bump-gpui` —

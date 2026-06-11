@@ -43,6 +43,14 @@ ci:
     cargo test --locked
     cargo test --locked --features overlay
 
+# Verify the TEMPLATE itself: this repo's source carries {{ }} tokens and does NOT build
+# directly, so render a throwaway project (outside the repo, like CI) and lint + test that.
+# Needs cargo-generate (`cargo install cargo-generate`). Inside a generated fork, use `just ci`.
+check-template:
+    rm -rf "${TMPDIR:-/tmp}/deck-template-check"
+    cargo generate --path "{{justfile_directory()}}" --name app --silent --vcs none --destination "${TMPDIR:-/tmp}/deck-template-check"
+    cd "${TMPDIR:-/tmp}/deck-template-check/app" && cargo clippy --all-targets --features tray,overlay -- -D warnings && cargo test && cargo test --features overlay
+
 # Auto-fix everything fixable: clippy's machine-applicable suggestions + formatting.
 # Re-run `just ci` afterwards to confirm green. (--allow-dirty so it works mid-edit.)
 fix:

@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an improvement to the Deck starter.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Deck is kept deliberately small (~700 lines). The best additions make it
+        a better foundation for everyone who forks it — not your app's domain
+        logic. When in doubt, open this first before a PR.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The friction or gap you're hitting in the starter.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What you'd like to see. Keep "kept small" in mind.
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Platform scope
+      options:
+        - Both macOS and Linux
+        - macOS only
+        - Linux only
+        - Docs / tooling only
+    validations:
+      required: false

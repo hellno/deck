@@ -28,12 +28,12 @@ use settings::Settings;
 use shell::Shell;
 
 /// The display name used in the menu bar and window. Change this first when forking.
-pub const APP_NAME: &str = "Deck";
+pub const APP_NAME: &str = "{{project-name | title_case}}";
 
 // Declare the app's actions. Each becomes a zero-sized struct you can bind a key
 // to, hang a menu item off of, and handle in a view or globally. Add your own here.
 gpui::actions!(
-    deck,
+    {{crate_name}},
     [
         Quit,
         About,

@@ -126,7 +126,7 @@ def write_linux(fullbleed, name):
         made.append(p)
     desktop = os.path.join(root, f"{name}.desktop")
     with open(desktop, "w") as f:
-        f.write("[Desktop Entry]\nType=Application\nName=Deck\n"
+        f.write("[Desktop Entry]\nType=Application\nName={{project-name | title_case}}\n"
                 "Comment=Native cross-platform desktop app starter built on GPUI\n"
                 f"Exec={name}\nIcon={name}\nTerminal=false\n"
                 "Categories=Development;Utility;\n")
@@ -136,7 +136,7 @@ def write_linux(fullbleed, name):
 def main():
     ap = argparse.ArgumentParser(description="Generate macOS/Linux/web app icons from one image.")
     ap.add_argument("source", nargs="?", default=os.path.join(ROOT, "assets", "icon-source.png"))
-    ap.add_argument("--name", default="deck")
+    ap.add_argument("--name", default="{{project-name}}")
     ap.add_argument("--out", default=os.path.join(ROOT, "assets"))
     ap.add_argument("--no-mask", action="store_true")
     ap.add_argument("--no-shadow", action="store_true")
