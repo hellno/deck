@@ -1,13 +1,13 @@
 [package]
-name = "deck"
+name = "{{project-name}}"
 version = "0.1.0"
 edition = "2021"
 description = "An omakase native desktop app starter (macOS + Linux) on GPUI + gpui-component. Fork it, rename it, ship it."
 license = "0BSD"
-default-run = "deck"
+default-run = "{{project-name}}"
 
 [[bin]]
-name = "deck"
+name = "{{project-name}}"
 path = "src/main.rs"
 
 # Lint policy lives in the manifest (not just CI flags) so rust-analyzer and `cargo check` surface
@@ -89,10 +89,15 @@ codegen-units = 1
 # (bakes the macOS squircle + builds icon.icns), then re-bundle.
 # ---------------------------------------------------------------------------
 [package.metadata.bundle]
-name = "Deck"
-identifier = "com.example.deck"
+name = "{{project-name | title_case}}"
+identifier = "{{bundle_qualifier}}.{{bundle_org}}.{{project-name}}"
 icon = ["assets/icon.icns"]
 category = "public.app-category.productivity"
 short_description = "A small, snappy native desktop app starter built on GPUI."
-long_description = "Deck is a tiny, opinionated GPUI starter you can fork to build your own fast, native desktop app on macOS and Linux (and wire your own AI agent into it)."
+long_description = "{{project-name | title_case}} — a native desktop app built on GPUI + gpui-component for macOS and Linux."
 osx_minimum_system_version = "11.0"
+# Ship the notices alongside the binary: Apache-2.0 §4 and ISC require their
+# notices to travel with redistributed binaries, so cargo-bundle copies these
+# into the .app / .deb.
+resources = ["NOTICE", "LICENSE"]
+copyright = "Copyright (c) 2026 {{project-name | title_case}} contributors. 0BSD. Bundles Apache-2.0/ISC/GPL-3.0-or-later third-party code; see NOTICE."

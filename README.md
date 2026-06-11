@@ -4,6 +4,9 @@
 
 **A native desktop-app starter for macOS + Linux, built on [GPUI](https://www.gpui.rs/) + [gpui-component](https://github.com/longbridge/gpui-component).**
 
+[![CI](https://github.com/hellno/deck/actions/workflows/ci.yml/badge.svg)](https://github.com/hellno/deck/actions/workflows/ci.yml)
+[![License: 0BSD](https://img.shields.io/badge/license-0BSD-blue.svg)](LICENSE)
+
 Fork it, rename it, ship it. You get a real title bar, the system menu bar, keyboard shortcuts,
 a dark/light theme with a live accent picker, persisted settings, and an optional menu-bar (tray)
 mode. Then delete the welcome screen and build your app — or wire in your own AI agent.
@@ -25,14 +28,30 @@ done once, opinionated, and kept small: ~700 lines across a few files, fresh git
 
 ## Quick start
 
+Deck is a **template** — scaffold your own renamed app with [`cargo-generate`](https://github.com/cargo-generate/cargo-generate):
+
 ```
-git clone <your-fork> my-app && cd my-app
+cargo install cargo-generate
+cargo generate gh:hellno/deck --name my-app
+```
+
+It renames the crate, app name, bundle id, and config-dir consts for you (answer the bundle-org
+prompt, or pass `-d bundle_org=acme`). Then:
+
+```
+cd my-app
 cargo run
 ```
 
-The first build compiles GPUI from Zed's git from source (a few minutes, once); after that, rebuilds are
-fast. You need **`rustup`** — the exact Rust version is pinned in `rust-toolchain.toml` (currently
-`1.95.0`, matching Zed) and installed automatically on first build. Plus:
+> Cloning this repo and running `cargo run` directly won't work — its source carries `{{ }}`
+> template tokens (that's how the rename happens). Always scaffold via `cargo generate`.
+
+The first build compiles GPUI + wgpu from source and takes roughly 5–15 minutes depending on the
+machine (once); after that, rebuilds are fast. You need **`rustup`** — the exact Rust version is pinned
+in `rust-toolchain.toml` (currently `1.95.0`, matching Zed) and installed automatically on first build.
+[`just`](https://github.com/casey/just) is recommended for the task recipes (`cargo install just`, or
+`brew install just` / your distro's package) — every recipe is plain `cargo` underneath, so it's
+optional. Plus:
 
 - **macOS 11+** — **Xcode Command Line Tools** (`xcode-select --install`). Apple Silicon + Intel.
   Renders with **Metal**.
@@ -58,6 +77,7 @@ fast. You need **`rustup`** — the exact Rust version is pinned in `rust-toolch
 | ⌨️ | **Keyboard shortcuts** → actions → menu items | `main.rs`, `shell.rs` |
 | 📋 | Native **menu bar** (App / File / Edit / View) | `main.rs` |
 | 🟣 | Optional **menu-bar / tray mode**, no dock icon — `--features tray` | `tray.rs` |
+| 🫧 | Optional **floating overlay** — transparent always-on-top window — `--features overlay` | `overlay/` |
 | 🔣 | **Lucide** icon set (ISC licensed, bundled) | `gpui-component` |
 | 🖼️ | **App icon** pipeline (image → squircle → icns) + `cargo bundle` config | `scripts/`, `assets/`, `Cargo.toml` |
 
@@ -120,6 +140,19 @@ it recolors to match your accent. Menu clicks are bridged back into GPUI on its 
 `tray-icon` is cross-platform (`NSStatusItem` on macOS, `libappindicator` on Linux); the dock-hiding
 is macOS-only and cfg-gated. Architecture in [LEARNINGS §8](docs/LEARNINGS.md#tray).
 
+## Floating overlay (`--features overlay`)
+
+```
+cargo run --features overlay
+```
+
+This adds a transparent, always-on-top surface that floats over other apps — the seam for a HUD,
+a quick-capture bar, or an ambient agent panel. It's a real GPUI window (no second renderer); the
+panel is hardened via the shared `objc2` stack so it sits above full-screen spaces. macOS-only in
+v1; on Linux it compiles to a no-op (no LayerShell yet), so a Linux build still passes. The module
+lives in `src/overlay/` — see [docs/overlay.md](docs/overlay.md) for the design and the hardening
+details.
+
 ## Platforms
 
 | | macOS | Linux |
@@ -139,7 +172,7 @@ on every push) but isn't daily-driven yet. Linux issues/PRs welcome.
 2. **Change the display name** — `APP_NAME` in `src/main.rs` (drives the menu bar + window title).
 3. **Change the bundle id** — `[package.metadata.bundle].identifier` in `Cargo.toml`, and the
    `QUALIFIER/ORGANIZATION/APPLICATION` consts in `src/settings.rs` (they pick the config-dir path).
-4. **Swap the icon** — drop a 1024×1024 image at `assets/icon-source.png` and run `just icon` (bakes the macOS squircle tile + shadow and rebuilds `assets/icon.icns`), then `just bundle`.
+4. **Swap the icon** — drop a 1024×1024 image at `assets/icon-source.png` and run `just icon` (bakes the macOS squircle tile + shadow and rebuilds `assets/icon.icns`), then `just bundle`. `just icon` needs **Python 3 + Pillow** (`pip install pillow`); the `.icns` step is **macOS-only** (it shells out to `iconutil`), while the PNG it starts from is cross-platform.
 5. **Replace the UI** — gut `src/welcome.rs` (and add routes in `src/shell.rs`) and build your thing.
 
 Then ship a real app:
@@ -195,10 +228,14 @@ deck/
 │   ├── settings.rs       the persisted Settings struct (serde + config dir)
 │   ├── settings_view.rs  the settings page UI
 │   ├── theme.rs          refined palette + accent colors
-│   └── tray.rs           optional menu-bar tray icon (feature = "tray")
+│   ├── tray.rs           optional menu-bar tray icon (feature = "tray")
+│   └── overlay/          optional transparent always-on-top surface (feature = "overlay")
 └── docs/
-    ├── LEARNINGS.md      deep dive: theme, icons, storage, menu bar, dock, tray
-    └── UPGRADING.md      how to bump gpui / gpui-component to the latest stable safely
+    ├── LEARNINGS.md            deep dive: theme, icons, storage, menu bar, dock, tray
+    ├── UPGRADING.md            how to bump gpui / gpui-component to the latest stable safely
+    ├── overlay.md             the floating overlay surface: design + macOS hardening
+    ├── background-jobs.md      running async work off the UI thread
+    └── AGENTIC-ENGINEERING.md  why each lint + gate exists (the rules behind CLAUDE.md)
 ```
 
 ## Tech stack & the dependency story
@@ -232,3 +269,8 @@ Built on [Zed](https://github.com/zed-industries/zed) (GPUI) and
 [Longbridge](https://github.com/longbridge/gpui-component) (gpui-component); icons are
 [Lucide](https://lucide.dev) (ISC). Deck itself is 0BSD — zero-attribution, do whatever you want.
 See [NOTICE](NOTICE) for third-party attributions.
+
+Note: distributed Deck binaries statically link GPL-3.0-or-later components (`zlog` / `ztracing` /
+`ztracing_macro`, pulled in transitively via `gpui`), so shipping a **binary** carries a GPL-3.0
+source-offer obligation; Deck's
+own source stays 0BSD. See [NOTICE](NOTICE) for details.

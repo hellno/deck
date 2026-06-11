@@ -22,9 +22,26 @@ use. Keep this notice if you redistribute the bundled icons. https://lucide.dev
 
 GPUI and gpui-component
 -----------------------
-- gpui (`gpui` 0.2.x on crates.io) — derived from Zed's GPUI. Apache-2.0 / GPL
-  (see the upstream Zed repository for details).
-- gpui-component (`gpui-component` 0.5.x) — Apache-2.0, © Longbridge.
+The framework crates are pulled from git (pinned in Cargo.lock), not crates.io,
+and are all Apache-2.0:
+
+- gpui, gpui_platform, sum_tree — from Zed (https://github.com/zed-industries/zed,
+  pinned at commit 86effffd). Apache-2.0, © Zed Industries.
+- gpui-component, gpui-component-assets — from
+  https://github.com/longbridge/gpui-component (pinned at commit dadfca97).
+  Apache-2.0, © Longbridge.
+
+GPL-3.0-or-later obligation (please read before distributing a binary)
+......................................................................
+Zed's logging/tracing crates — zlog, ztracing, ztracing_macro — are
+GPL-3.0-or-later, and the git gpui stack links them statically into the binary
+via the chain `gpui -> sum_tree -> ztracing -> zlog`. Deck did not add them;
+they are inherent to building on Zed's git gpui stack. Because this code is
+compiled into a distributed Deck binary, that binary carries a GPL-3.0-or-later
+copyleft (offer-of-source) obligation: if you ship a binary, you must make the
+corresponding source available under GPL-3.0-or-later. This applies only to the
+binary — Deck's own source remains 0BSD. See deny.toml for the scoped license
+exceptions covering exactly these three crates.
 
 tray-icon (optional, `--features tray`)
 ---------------------------------------

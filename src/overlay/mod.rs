@@ -29,7 +29,7 @@ use state::OverlayAnchor;
 // The recording toggle action. Declared cross-platform (acceptance criterion #8: the
 // action + its keybinding must compile on Linux); the *handler* only does work on
 // macOS, where the pill window exists.
-gpui::actions!(deck, [ToggleRecording]);
+gpui::actions!({{crate_name}}, [ToggleRecording]);
 
 // Globals holding a weak handle to each live overlay view (for background pushes +
 // the recording toggle) plus the window's root handle (held for lifecycle/teardown).
@@ -109,7 +109,7 @@ fn env_override_bool(key: &str) -> Option<bool> {
     let raw = std::env::var(key).ok()?;
     let parsed = parse_bool_override(&raw);
     if parsed.is_none() {
-        eprintln!("deck: ignoring {key}={raw:?} (expected 1/0/true/false)");
+        eprintln!("{{project-name}}: ignoring {key}={raw:?} (expected 1/0/true/false)");
     }
     parsed
 }

@@ -16,9 +16,9 @@ use crate::theme::Accent;
 
 // Reverse-DNS used for the config dir. Keep in sync with the bundle identifier
 // in Cargo.toml when you fork. (qualifier, organization, application)
-const QUALIFIER: &str = "com";
-const ORGANIZATION: &str = "Example";
-const APPLICATION: &str = "Deck";
+const QUALIFIER: &str = "{{bundle_qualifier}}";
+const ORGANIZATION: &str = "{{bundle_org}}";
+const APPLICATION: &str = "{{project-name}}";
 
 /// Persisted theme preference. We keep our own enum (rather than reusing
 /// gpui-component's `ThemeMode`) so the on-disk format is ours to control.
@@ -114,7 +114,7 @@ impl Settings {
     /// handling) when the write is load-bearing — e.g. an agent fork's chat history.
     pub fn save_best_effort(&self) {
         if let Err(err) = self.save() {
-            eprintln!("deck: could not save settings: {err}");
+            eprintln!("{{project-name}}: could not save settings: {err}");
         }
     }
 }

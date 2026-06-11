@@ -1,12 +1,13 @@
 name: CI
 
-# Builds the Deck on macOS *and* Linux so cross-platform stays honest.
-# (GPUI renders with Metal on macOS and Vulkan via wgpu on Linux.)
+# Deck is a cargo-generate TEMPLATE: its tracked source contains {{ }} Liquid tokens
+# (see cargo-generate.toml `include`) and so does NOT build directly. Every job below
+# therefore GENERATES a throwaway project from the template first, then builds / lints /
+# tests THAT. Editing the template? Read the "cargo-generate template" note in CLAUDE.md.
 #
-# COST: free. Standard GitHub-hosted runners (macos-latest, ubuntu-latest) are
-# free + unlimited on PUBLIC repos — the macOS 10x multiplier only burns quota
-# on PRIVATE repos. If you ever make this repo private, gate the `macos` job to
-# tags to avoid eating your minutes, e.g. add to that job:
+# COST: free. Standard GitHub-hosted runners (macos-latest, ubuntu-latest) are free +
+# unlimited on PUBLIC repos — the macOS 10x multiplier only burns quota on PRIVATE repos.
+# If you ever make this repo private, gate the `macos` job to tags to avoid eating minutes:
 #     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
 # (Don't switch to "*-large" runners — those are billed even on public repos.)
 
@@ -21,9 +22,13 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
-# Cancel a still-running CI for a branch when a newer commit is pushed. Deck's first
-# git-gpui build is slow, so when an agent pushes a fix-up the stale run is killed and
-# the runner starts on the latest commit immediately (faster feedback, fewer minutes).
+# Least-privilege GITHUB_TOKEN: this workflow only checks out, generates, builds, lints,
+# tests, and runs cargo-deny — it needs read access to repo contents and nothing else.
+permissions:
+  contents: read
+
+# Cancel a still-running CI for a branch when a newer commit is pushed (faster feedback,
+# fewer minutes — the generated project's first git-gpui build is slow).
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -32,86 +37,87 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      # No toolchain version here on purpose: rust-toolchain.toml is the single
-      # source of truth. rustup (preinstalled on GitHub runners) auto-installs the
-      # pinned version and its clippy/rustfmt components on the first cargo call.
-      - uses: Swatinem/rust-cache@v2
-      # --locked everywhere: reproducibility lives in the committed Cargo.lock (it
-      # pins exact git gpui commits). --locked fails CI on a stale lock; `just
-      # bump-gpui` rewrites+commits the lock, so this never fights the bump flow.
-      - run: cargo build --locked
-      - run: cargo build --locked --features tray
-      - run: cargo clippy --locked --all-targets --features tray -- -D warnings
-      # why: lint the DEFAULT/shipping feature config too — CI only ever linted
-      # the tray build, so a clippy regression on the default build slipped through.
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      # Overlay feature (macOS: real transparent PopUp window + objc2 panel harden).
-      - run: cargo build --locked --features overlay
-      - run: cargo clippy --locked --all-targets --features overlay -- -D warnings
-      - run: cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
-      # why: run the test suite — the command_palette fuzzy-match tests existed but
-      # CI never executed them, so an agent could break scoring invisibly.
-      - run: cargo test --locked
-      # why: the overlay unit tests (OverlayState/anchor math, JobStatus + HudState
-      # reducers) are gated behind --features overlay, so run them explicitly or they
-      # never execute. The reducers/anchor math are platform-independent — runs on Linux too.
-      - run: cargo test --locked --features overlay
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # Prebuilt cargo-generate (fast, deterministic — no compile). SHA-pinned;
+      # Dependabot (github-actions) keeps it current.
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
+        with:
+          tool: cargo-generate
+      # Render the template into a sibling dir (NOT inside the repo — a nested cargo
+      # project confuses cargo, see rust-lang/cargo#9922). --silent uses the placeholder
+      # defaults (bundle_qualifier=com, bundle_org=example).
+      - name: Generate a project from the template
+        run: cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
+      # No toolchain pin here: rust-toolchain.toml (copied into the generated project) is
+      # the single source of truth; rustup auto-installs it on the first cargo call.
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: ${{ runner.temp }}/gen/deck-ci
+      # No --locked: the generated Cargo.lock's root entry is renamed at generate time, so
+      # cargo refreshes just that on first build (the git-gpui deps stay pinned).
+      - name: Build, lint, and test the generated project
+        working-directory: ${{ runner.temp }}/gen/deck-ci
+        run: |
+          cargo build
+          cargo build --features tray
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy --all-targets --features tray -- -D warnings
+          cargo clippy --all-targets --features overlay -- -D warnings
+          cargo clippy --all-targets --features tray,overlay -- -D warnings
+          cargo test
+          cargo test --features overlay
 
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      # No toolchain version here on purpose: rust-toolchain.toml is the single
-      # source of truth. rustup (preinstalled on GitHub runners) auto-installs the
-      # pinned version and its clippy/rustfmt components on the first cargo call.
-      - uses: Swatinem/rust-cache@v2
-      # System libraries GPUI needs on Linux (X11 + Wayland + Vulkan + fonts),
-      # plus GTK/appindicator for the optional tray feature.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      # System libraries GPUI needs on Linux (X11 + Wayland + Vulkan + fonts), plus
+      # GTK/appindicator for the optional tray feature.
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config \
             libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libwayland-dev libxkbcommon-dev \
+            libwayland-dev \
             libvulkan-dev \
             libfontconfig1-dev libfreetype6-dev \
             libssl-dev \
             libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
-      # why: formatting is OS-independent, so gate `cargo fmt --check` ONCE on the
-      # cheaper Linux runner instead of the 10x-billed macOS one. Deck is already
-      # fmt-clean, so this lands green with no baseline-format commit.
-      - run: cargo fmt --all --check
-      # --locked everywhere: reproducibility lives in the committed Cargo.lock (it
-      # pins exact git gpui commits). --locked fails CI on a stale lock; `just
-      # bump-gpui` rewrites+commits the lock, so this never fights the bump flow.
-      - run: cargo build --locked
-      - run: cargo build --locked --features tray
-      - run: cargo clippy --locked --all-targets --features tray -- -D warnings
-      # why: lint the DEFAULT/shipping feature config too — CI only ever linted
-      # the tray build, so a clippy regression on the default build slipped through.
-      - run: cargo clippy --locked --all-targets -- -D warnings
-      # Overlay feature (Linux: compile-only no-op path — no LayerShell in v1).
-      - run: cargo build --locked --features overlay
-      - run: cargo clippy --locked --all-targets --features overlay -- -D warnings
-      # why: run the test suite — the command_palette fuzzy-match tests existed but
-      # CI never executed them, so an agent could break scoring invisibly.
-      - run: cargo test --locked
-      # why: the overlay unit tests (OverlayState/anchor math, JobStatus + HudState
-      # reducers) are gated behind --features overlay, so run them explicitly or they
-      # never execute. The reducers/anchor math are platform-independent — runs on Linux too.
-      - run: cargo test --locked --features overlay
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
+        with:
+          tool: cargo-generate
+      - name: Generate a project from the template
+        run: cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: ${{ runner.temp }}/gen/deck-ci
+      # Formatting is OS-independent, so gate `cargo fmt --check` once on the cheaper
+      # Linux runner. The overlay feature is a compile-only no-op on Linux (no LayerShell).
+      - name: Format-check, build, lint, and test the generated project
+        working-directory: ${{ runner.temp }}/gen/deck-ci
+        run: |
+          cargo fmt --all --check
+          cargo build
+          cargo build --features tray
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy --all-targets --features tray -- -D warnings
+          cargo clippy --all-targets --features overlay -- -D warnings
+          cargo test
+          cargo test --features overlay
 
-  # why: supply-chain gate (advisories / bans / sources / licenses) via cargo-deny.
-  # deny.toml is already seeded and passes locally (`cargo deny check` is green). This lands
-  # NON-BLOCKING (continue-on-error) only so the first CI run can't surprise-break a PR — flip it
-  # to a required check (drop continue-on-error) after one green run on CI.
+  # Supply-chain gate (advisories / bans / sources / licenses) via cargo-deny, run against
+  # the GENERATED project (the raw template Cargo.toml has tokens and won't parse). REQUIRED:
+  # a deny.toml violation fails the build.
   cargo-deny:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
-          command: check advisories bans sources licenses
+          tool: cargo-generate,cargo-deny
+      - name: Generate a project from the template
+        run: cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
+      - name: cargo-deny check
+        working-directory: ${{ runner.temp }}/gen/deck-ci
+        run: cargo deny check advisories bans sources licenses

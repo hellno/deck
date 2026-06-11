@@ -1,0 +1,36 @@
+# cargo-generate template config for Deck.
+#
+# Deck is a cargo-generate TEMPLATE. Forkers run:
+#   cargo install cargo-generate
+#   cargo generate gh:hellno/deck --name my-app   # answer the bundle-org prompt
+#
+# The files in `include` below contain {{ }} Liquid tokens, so the raw repo does
+# NOT build directly — CI generates a project first, then builds it. See
+# .github/workflows/ci.yml and the "cargo-generate template" note in CLAUDE.md.
+
+[template]
+cargo_generate_version = ">=0.18.0"
+
+# ALLOWLIST: ONLY these files are processed for Liquid `{{ }}` tokens. Every other
+# file (justfile, README, .github/*, docs/*, the other src/*.rs) is copied verbatim,
+# so their braces/`${{ }}`/code are never touched.
+#
+# ⚠️ Maintaining this: to rename a new literal, add its file here AND add the token.
+# NEVER put a literal `{{` or `{%` in an included file — Liquid would try to parse it.
+include = [
+    "Cargo.toml",
+    # Cargo.lock's root [[package]] name must track Cargo.toml's, or `cargo --locked`
+    # (in the generated fork's `just ci`) fails on the renamed root package.
+    "Cargo.lock",
+    "src/main.rs",
+    "src/settings.rs",
+    "src/overlay/mod.rs",
+    "scripts/make-app-icon.py",
+    "LICENSE",
+]
+
+[placeholders]
+# Reverse-DNS bundle identifier parts. `{{project-name}}` (from --name) is the third
+# segment, so the full id is `{{bundle_qualifier}}.{{bundle_org}}.{{project-name}}`.
+bundle_qualifier = { type = "string", prompt = "Bundle ID qualifier (reverse-DNS top segment)", default = "com", regex = "^[a-z][a-z0-9]*$" }
+bundle_org = { type = "string", prompt = "Bundle ID organization (reverse-DNS, e.g. your name or company)", default = "example", regex = "^[a-z0-9][a-z0-9-]*$" }
