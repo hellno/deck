@@ -47,7 +47,9 @@ jobs:
       # project confuses cargo, see rust-lang/cargo#9922). --silent uses the placeholder
       # defaults (bundle_qualifier=com, bundle_org=example).
       - name: Generate a project from the template
-        run: cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
+        run: |
+          mkdir -p "$RUNNER_TEMP/gen"
+          cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
       # No toolchain pin here: rust-toolchain.toml (copied into the generated project) is
       # the single source of truth; rustup auto-installs it on the first cargo call.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
@@ -88,7 +90,9 @@ jobs:
         with:
           tool: cargo-generate
       - name: Generate a project from the template
-        run: cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
+        run: |
+          mkdir -p "$RUNNER_TEMP/gen"
+          cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: ${{ runner.temp }}/gen/deck-ci
@@ -117,7 +121,9 @@ jobs:
         with:
           tool: cargo-generate,cargo-deny
       - name: Generate a project from the template
-        run: cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
+        run: |
+          mkdir -p "$RUNNER_TEMP/gen"
+          cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
       - name: cargo-deny check
         working-directory: ${{ runner.temp }}/gen/deck-ci
         run: cargo deny check advisories bans sources licenses

@@ -15,10 +15,19 @@
 //! GPUI `Global`, then `cx.notify()`. `upgrade()` returning `None` is the natural
 //! no-op after the overlay closes — no panic, no leaked task.
 
+// macOS-only in v1: the overlay windows + their objc2 panel hardening only exist on
+// macOS, so every consumer below is `#[cfg(target_os = "macos")]`. Gate the submodules
+// to match — otherwise a Linux `--features overlay` build compiles them with zero users
+// and clippy's `-D warnings` rejects the dead code. `install()` stays a no-op on Linux.
+#[cfg(target_os = "macos")]
 mod harden;
+#[cfg(target_os = "macos")]
 mod pill;
+#[cfg(target_os = "macos")]
 mod rail;
+#[cfg(target_os = "macos")]
 mod state;
+#[cfg(target_os = "macos")]
 mod status;
 
 #[cfg(target_os = "macos")]
