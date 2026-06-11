@@ -1,21 +1,12 @@
-# Dependabot configuration for Deck.
+# Dependabot configuration for Deck — GitHub Actions only.
 #
-# NOTE: the GPUI stack (gpui / gpui_platform / gpui-component / gpui-component-assets)
-# is pinned to exact GIT commits and is bumped ONLY via `just bump-gpui`. Dependabot's
-# `cargo` ecosystem proposes updates for registry (crates.io) deps and the lockfile;
-# it does NOT touch git dependencies, so those pins stay under `just bump-gpui` control.
+# No `cargo` ecosystem on purpose: this repo is a cargo-generate template, so Cargo.toml's
+# package name is a `{{ }}` token and Dependabot's cargo parser rejects it. (It would add
+# little here anyway — the GPUI stack is git-pinned and bumped via `just bump-gpui`, and
+# Dependabot ignores git deps.) A generated fork has real names, so cargo updates work there.
 version: 2
 updates:
-  # crates.io dependencies (serde, serde_json, directories, tray-icon, objc2*, raw-window-handle).
-  - package-ecosystem: "cargo"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "deps"
-
-  # GitHub Actions (keeps the SHA-pinned actions in ci.yml current).
+  # GitHub Actions — keeps the SHA-pinned actions in ci.yml current.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
