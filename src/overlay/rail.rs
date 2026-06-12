@@ -153,27 +153,35 @@ impl Render for Rail {
             }))
             .child(Icon::new(IconName::Bell).text_color(muted));
 
-        // Outer frosted panel: translucent popover bg + border + shadow. The window
-        // itself is transparent, so everything outside this rounded panel shows through.
-        v_flex()
-            .items_center()
-            .gap_2()
-            .p_2()
-            .rounded_xl()
-            .border_1()
-            .border_color(border)
-            .bg(surface.opacity(0.85))
-            .shadow_lg()
-            .child(jobs_col)
-            // SECTION 2 — divider: a thin horizontal line separating jobs from actions.
-            .child(div().h(px(1.0)).w(px(40.0)).bg(border))
-            // SECTION 3 — the three square action buttons.
+        // Transparent full-window wrapper; the content-sized frosted panel floats centered
+        // via its OWN `shadow_lg`. The window's OS shadow is disabled in `mod.rs`
+        // (`harden_panel(.., true)`), so the panel isn't framed by a mismatched rounded-rect
+        // window shadow around the transparent canvas — matching the pill. Borderless for the
+        // same clean, unframed look; everything outside the rounded panel shows through.
+        div()
+            .size_full()
+            .flex()
+            .items_start()
+            .justify_center()
             .child(
                 v_flex()
+                    .items_center()
                     .gap_2()
-                    .child(pin_button)
-                    .child(eye_button)
-                    .child(bell_button),
+                    .p_2()
+                    .rounded_xl()
+                    .bg(surface.opacity(0.9))
+                    .shadow_lg()
+                    .child(jobs_col)
+                    // SECTION 2 — divider: a thin horizontal line separating jobs from actions.
+                    .child(div().h(px(1.0)).w(px(40.0)).bg(border))
+                    // SECTION 3 — the three square action buttons.
+                    .child(
+                        v_flex()
+                            .gap_2()
+                            .child(pin_button)
+                            .child(eye_button)
+                            .child(bell_button),
+                    ),
             )
     }
 }

@@ -113,3 +113,21 @@ Full contrast and rationale: `docs/LEARNINGS.md` §17.
 
 Ground UI changes in `README.md` and `docs/LEARNINGS.md` (real screenshots and
 hard-won GPUI lessons) — not remembered descriptions of how things look.
+
+**Close the visual loop — `just screenshot` instead of guessing.** After a UI edit,
+capture the result and *look* at the image (this is the OODA loop: observe the real
+pixels, don't assume). It launches the app, optionally drives it to a view, captures
+the front window, and quits — also how you refresh the README shots. macOS only; a
+human grants your terminal **Screen Recording** + **Accessibility** once (System
+Settings → Privacy & Security), so a sandboxed session can't do the first run unaided.
+
+```
+just screenshot                                         # welcome → docs/screenshot.png
+just screenshot docs/screenshot-settings.png "" cmd+,   # settings page
+just screenshot docs/screenshot-palette.png  "" cmd+k   # command palette
+just screenshot docs/overlay.png overlay                # overlay rail + pill (alpha, leak-proof)
+SHOT_BACKDROP=zed just screenshot docs/tray.png tray    # menu-bar tray icon + its menu
+```
+
+Overlay/tray capture is `--features`-driven (see the recipe). Hover states still need a
+cursor tool (e.g. `cliclick`) — out of scope.
