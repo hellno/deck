@@ -31,17 +31,32 @@ and are all Apache-2.0:
   https://github.com/longbridge/gpui-component (pinned at commit dadfca97).
   Apache-2.0, © Longbridge.
 
-GPL-3.0-or-later obligation (please read before distributing a binary)
-......................................................................
+GPL-3.0-or-later components (matters mainly for closed-source binaries)
+.......................................................................
 Zed's logging/tracing crates — zlog, ztracing, ztracing_macro — are
-GPL-3.0-or-later, and the git gpui stack links them statically into the binary
-via the chain `gpui -> sum_tree -> ztracing -> zlog`. Deck did not add them;
-they are inherent to building on Zed's git gpui stack. Because this code is
-compiled into a distributed Deck binary, that binary carries a GPL-3.0-or-later
-copyleft (offer-of-source) obligation: if you ship a binary, you must make the
-corresponding source available under GPL-3.0-or-later. This applies only to the
-binary — Deck's own source remains 0BSD. See deny.toml for the scoped license
-exceptions covering exactly these three crates.
+GPL-3.0-or-later, and the git gpui stack links them into the binary via the
+chain `gpui -> sum_tree -> ztracing -> zlog`. sum_tree itself is Apache-2.0; it
+is simply the carrier whose unconditional `ztracing` dependency drags the three
+GPL crates in. Deck did not add them — Zed wired ztracing into sum_tree in Dec
+2025 (PR #44147), so they are present on Deck's pinned git commit and on current
+gpui main, but NOT in the Oct-2025 crates.io 0.2.2 snapshot. At Deck's default
+build they are compile-time no-ops (dormant Tracy instrumentation, active only
+behind an env-var-gated `--cfg ztracing`).
+
+GPL obligations attach to DISTRIBUTION, not to building or running:
+
+  - Local / internal-only use: no obligation, on any channel.
+  - Open-source fork (source already public): GPL-3.0's source-availability
+    requirement is satisfied trivially; nothing further to do.
+  - Closed-source / proprietary binary: you cannot statically link GPL-3.0 code
+    and keep the combined work proprietary. Build on the permissive crates.io
+    pair (`gpui = "0.2"`, `gpui-component = "0.5"`), whose `gpui_sum_tree`
+    carries none of Zed's git tracing crates, so the binary is free of the
+    GPL-3.0 chain.
+
+Deck's own source is 0BSD regardless. See deny.toml for the scoped license
+exceptions covering exactly these three crates, and zed-industries/zed#55470 for
+the upstream tracking issue. This is a summary, not legal advice.
 
 tray-icon (optional, `--features tray`)
 ---------------------------------------

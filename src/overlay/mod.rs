@@ -186,9 +186,11 @@ fn install_macos(cx: &mut gpui::App, main_window: gpui::WindowHandle<gpui_compon
             rail: rail.downgrade(),
             window: wh,
         });
-        // Keep the rail's window shadow (its `rounded_xl` panel matches the window's
-        // rounded-rect shadow, so there's no mismatched frame).
-        crate::overlay::harden::harden_panel(window, false);
+        // Drop the rail window's OS shadow (like the pill). The frosted panel is
+        // content-sized and floats via its own `shadow_lg`, centered in the transparent
+        // canvas — so the window's rounded-rect shadow would otherwise frame the whole
+        // empty canvas (a mismatched border around the panel). harden.rs: `true` = no shadow.
+        crate::overlay::harden::harden_panel(window, true);
         rail
     }) else {
         return;

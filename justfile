@@ -21,6 +21,19 @@ run-tray:
 run-overlay:
     cargo run --features overlay
 
+# Screenshot the running app → an image. macOS only; grant your terminal Screen
+# Recording + Accessibility once (System Settings → Privacy & Security). Launches the
+# app, captures, quits. What's captured depends on the feature you pass (arg 2):
+#   just screenshot                                          # welcome → docs/screenshot.png
+#   just screenshot docs/screenshot-settings.png "" cmd+,    # settings page (window)
+#   just screenshot docs/screenshot-palette.png  "" cmd+k    # command palette (window)
+#   just screenshot docs/overlay.png overlay                 # rail + pill → -rail/-pill (alpha)
+#   SHOT_BACKDROP=zed just screenshot docs/tray.png tray     # menu-bar status item + menu
+# Overlay panels capture with transparency (leak-proof). Hover states still need a cursor
+# tool (e.g. `cliclick`) and are out of scope.
+screenshot out="docs/screenshot.png" features="" keys="":
+    bash scripts/screenshot.sh "{{out}}" "{{features}}" "{{keys}}"
+
 # Format the code.
 fmt:
     cargo fmt

@@ -56,10 +56,12 @@ allow = [
 # ⚠️ COPYLEFT IN THE TREE — read this before shipping a closed-source fork. Zed's logging/tracing
 # crates (zlog, ztracing, ztracing_macro) are GPL-3.0-or-later and are LINKED into the binary as a
 # normal runtime dep: gpui -> sum_tree -> ztracing -> zlog. This is inherent to building on Zed's
-# git gpui stack — Deck did not add it. The exceptions below allow GPL ONLY for those three named
-# crates (so the gate can go green); they do NOT open the whole tree to copyleft. If your product
-# cannot take a GPL-3.0 obligation, raise it with upstream gpui — don't just delete these lines and
-# ship. Re-verify the crate list after every `just bump-gpui`.
+# git gpui stack — Deck did not add it (Zed wired ztracing into sum_tree in PR #44147, Dec 2025).
+# The exceptions below allow GPL ONLY for those three named crates (so the gate can go green); they
+# do NOT open the whole tree to copyleft. If your product cannot take a GPL-3.0 obligation, the clean
+# fix is to build on the permissive crates.io pair (gpui = "0.2", gpui-component = "0.5"), whose
+# gpui_sum_tree carries none of these crates — not to delete these exceptions and ship the git stack
+# anyway. Tracked upstream: zed-industries/zed#55470. Re-verify the crate list after every `just bump-gpui`.
 exceptions = [
     { allow = ["GPL-3.0-or-later"], crate = "zlog" },
     { allow = ["GPL-3.0-or-later"], crate = "ztracing" },

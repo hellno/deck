@@ -58,8 +58,10 @@ fn harden_panel_macos(window: &gpui::Window, hide_shadow: bool) {
         // window a near-opaque backing so the OS still draws a shadow (gpui_macos
         // window.rs: "avoid broken shadow"), but that shadow is a rounded *rectangle*
         // the size of the window — it shows as a mismatched frame behind a `rounded_full`
-        // pill. Killing it lets the pill's own rendered `shadow_lg` be the only depth cue.
-        // The rail passes `false` and keeps its window shadow.
+        // pill. Killing it lets the panel's own rendered `shadow_lg` be the only depth cue.
+        // Both the pill and the rail pass `true` — each is a content-sized panel centered in
+        // a larger transparent canvas, so the window-sized shadow would just be a mismatched
+        // frame around the empty canvas.
         panel.setHasShadow(false);
     }
 }
