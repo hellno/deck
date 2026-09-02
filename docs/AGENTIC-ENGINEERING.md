@@ -77,7 +77,7 @@ gate is the reth/alloy convention.
 **What.** New file at the repo root.
 
 ```toml
-msrv = "1.95.0"                 # match rust-toolchain.toml; governs which API suggestions clippy makes
+msrv = "1.97.1"                 # match rust-toolchain.toml; governs which API suggestions clippy makes
 allow-unwrap-in-tests = true    # the command_palette fuzzy-match tests unwrap() freely
 allow-expect-in-tests = true
 allow-panic-in-tests  = true
@@ -105,7 +105,7 @@ stricter crate-level restriction lints.
 
 ### 3. Deterministic formatting — `rustfmt.toml`
 
-**What.** New file at the repo root. All keys are **stable-channel** (Deck's pinned 1.95.0 stable
+**What.** New file at the repo root. All keys are **stable-channel** (Deck's pinned 1.97.1 stable
 `cargo fmt` honors them; nightly-only keys like `imports_granularity` / `group_imports` are
 deliberately excluded — stable silently ignores them, which is worse than not setting them).
 
@@ -147,34 +147,34 @@ allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", 
          "0BSD", "ISC", "Unicode-3.0", "Zlib", "MPL-2.0", "Unlicense", "CC0-1.0"]
 
 [bans]
-multiple-versions = "warn"   # the git gpui stack legitimately duplicates crates (objc2 0.5+0.6) — deny is permanently red
-wildcards = "deny"
+multiple-versions = "allow"  # GPUI has many target-specific duplicates; advisories still cover every version
+wildcards = "allow"  # git GPUI deps omit versions; Cargo.lock supplies the reproducible pins
 deny = [{ crate = "openssl", reason = "prefer rustls/ring; avoid the OpenSSL CVE surface" }]
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-# All SIX git origins, not two: Zed pins its own forks of font-kit/reqwest/scap/wgpu, pulled
-# transitively by the gpui stack. These are the exact forms recorded in Cargo.lock (note the
-# `.git` suffix on reqwest/wgpu). Re-derive with `grep 'git+' Cargo.lock` after every
-# `just bump-gpui` — Zed may add or retire forks.
+# All six active git origins, not two: Zed pins font-kit/reqwest/wasm_thread/xim-rs, pulled
+# transitively by the GPUI stack. Cargo.lock also records the inactive optional `scap` source,
+# which cargo-deny correctly ignores. After `just bump-gpui`, let `cargo deny check sources`
+# identify newly reachable origins rather than copying every source from the lockfile.
 allow-git = ["https://github.com/zed-industries/zed",
              "https://github.com/zed-industries/font-kit",
              "https://github.com/zed-industries/reqwest.git",
-             "https://github.com/zed-industries/scap",
-             "https://github.com/zed-industries/wgpu.git",
+             "https://github.com/zed-industries/wasm_thread",
+             "https://github.com/zed-industries/xim-rs.git",
              "https://github.com/longbridge/gpui-component"]
 ```
 
 **Why for an agent.** Three failure modes, gated at once: (a) pulling in a crate with a known
 RUSTSEC advisory, (b) adding a dep from a random git fork — the `[sources]` allow-list permits only
-the known origins (the six Zed/longbridge ones the gpui stack pulls), so a typo-squat or malicious
+the known origins (the six Zed/longbridge ones the GPUI stack pulls), so a typo-squat or malicious
 fork fails CI, (c) license drift. Cheap insurance for a project people fork and ship.
 
 **Tradeoff.** The license `allow` list must be **seeded locally first** (`cargo deny check
-licenses`), and `multiple-versions` must stay `warn` because the git gpui tree legitimately
-duplicates crates. So the CI job lands **non-blocking** and is promoted after one green run (see
-Rollout).
+licenses`). `multiple-versions` stays `allow` because the cross-platform git GPUI tree legitimately
+contains many target-specific duplicates; printing them produces thousands of non-actionable lines,
+while RustSec advisories still evaluate every locked version.
 
 ### 5. Close the CI gaps
 
@@ -332,10 +332,10 @@ list, so keep the two in sync (they're short). All of it is zero new dependencie
 | `#![forbid(unsafe_code)]` at the crate root | No escape hatch if an `objc2` bump needs a raw `unsafe` in the tray path. Use `unsafe_code = "deny"` in the manifest instead (§6). |
 | `clippy::pedantic` / `clippy::nursery` globally | Too noisy for a small UI app; nursery lints are unstable → a toolchain bump can surface new warnings and break `-D warnings`. Cherry-pick instead. |
 | The full `clippy::restriction` group | Clippy's own docs say never enable it wholesale (it contains mutually contradictory lints). Pick individual ones. |
-| Edition 2024 bump | Deck pins 1.95.0 in lockstep with gpui's git HEAD; an edition bump is orthogonal churn that risks the gpui pairing. |
-| Nightly rustfmt keys / nightly build flags (`-Zthreads`, cranelift, `-Zshare-generics`) | The 1.95.0 stable pin is **mandatory** for the git gpui build — nightly flags in a committed config brick `cargo build` for everyone. |
+| Edition 2024 bump | Deck pins 1.97.1 in lockstep with gpui's git HEAD; an edition bump is orthogonal churn that risks the gpui pairing. |
+| Nightly rustfmt keys / nightly build flags (`-Zthreads`, cranelift, `-Zshare-generics`) | The 1.97.1 stable pin is **mandatory** for the git gpui build — nightly flags in a committed config brick `cargo build` for everyone. |
 | `panic = "abort"` | Deck's `command_palette` tests rely on unwinding; `abort` also loses the backtrace on a panic. Keep the default unwinding. |
-| `multiple-versions = "deny"` in deny.toml | The git gpui stack pulls duplicate versions (objc2 0.5+0.6); permanently red. Keep `warn`. |
+| `multiple-versions = "deny"` in deny.toml | The git GPUI stack pulls many target-specific duplicate versions; permanently red. Keep `allow` and rely on the advisory gate for vulnerable versions. |
 | mold/lld linker config | Not worth the per-machine setup churn for a starter: it forces every forker/CI runner to install and configure an alternate linker, and on macOS `lld` is a measured *regression* vs Apple's default `ld`/`ld-prime`. The stock toolchain links fine. Do nothing. |
 | deckard-core-style crate-level `#![deny(clippy::unwrap_used, expect_used, panic, indexing_slicing)]` + `#![forbid(unsafe_code)]` on a security core | Deck has **no** security/crypto core — that hardening is wallet-specific and intentionally not applied here (e.g. `expect_used` would red `src/main.rs` and `src/tray.rs`, where expecting an infallible GPUI handle is correct). If you fork Deck into something security-sensitive, add a headless, GPUI-free core crate and adopt that hardening there. See the [deckard PR](https://github.com/hellno/deckard/pull/8) for the full pattern (bounds-checked reader, `Zeroizing` secrets, `#[must_use]` on secret types). |
 

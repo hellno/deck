@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 
 use gpui::{
     div, App, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, Render, Styled, Subscription, Window,
+    IntoElement, ParentElement, PromptLevel, Render, Styled, Subscription, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants},
@@ -21,7 +21,7 @@ use gpui_component::{
 use crate::command_palette::PaletteDelegate;
 use crate::settings::{Settings, ThemeModePref};
 use crate::theme::{self, Accent};
-use crate::{GoBack, NewItem, OpenSettings, ToggleTheme, APP_NAME};
+use crate::{About, GoBack, NewItem, OpenSettings, ToggleTheme, APP_NAME};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Route {
@@ -77,8 +77,7 @@ impl Shell {
             created: 0,
             palette: None,
             palette_sub: None,
-            // Seed a few sensible "recents" so the palette is never blank on first open.
-            recents: ["settings", "new", "theme"].into_iter().collect(),
+            recents: VecDeque::new(),
         }
     }
 
@@ -138,6 +137,16 @@ impl Shell {
         self.toggle_mode(cx);
     }
 
+    fn on_about(&mut self, _: &About, window: &mut Window, cx: &mut Context<Self>) {
+        drop(window.prompt(
+            PromptLevel::Info,
+            APP_NAME,
+            Some("A native desktop app built with GPUI and gpui-component."),
+            &["OK"],
+            cx,
+        ));
+    }
+
     fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let muted = cx.theme().muted_foreground;
         let is_settings = self.route == Route::Settings;
@@ -160,6 +169,8 @@ impl Shell {
                             Button::new("back")
                                 .ghost()
                                 .icon(IconName::ChevronLeft)
+                                .accessibility_label("Back to welcome")
+                                .tooltip("Back")
                                 .on_click(
                                     cx.listener(|this, _, _, cx| this.navigate(Route::Welcome, cx)),
                                 )
@@ -180,6 +191,8 @@ impl Shell {
                             Button::new("open-settings")
                                 .ghost()
                                 .icon(IconName::Settings)
+                                .accessibility_label("Open settings")
+                                .tooltip("Settings")
                                 .on_click(
                                     cx.listener(|this, _, _, cx| {
                                         this.navigate(Route::Settings, cx)
@@ -190,6 +203,8 @@ impl Shell {
                             Button::new("toggle-theme")
                                 .ghost()
                                 .icon(theme_icon)
+                                .accessibility_label("Toggle light or dark theme")
+                                .tooltip("Toggle theme")
                                 .on_click(cx.listener(|this, _, _, cx| this.toggle_mode(cx))),
                         ),
                 ),
@@ -223,6 +238,7 @@ impl Render for Shell {
             .bg(background)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::on_new_item))
+            .on_action(cx.listener(Self::on_about))
             .on_action(cx.listener(Self::on_open_settings))
             .on_action(cx.listener(Self::on_go_back))
             .on_action(cx.listener(Self::on_toggle_theme))

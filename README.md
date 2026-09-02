@@ -48,7 +48,7 @@ cargo run
 
 The first build compiles GPUI + wgpu from source and takes roughly 5–15 minutes depending on the
 machine (once); after that, rebuilds are fast. You need **`rustup`** — the exact Rust version is pinned
-in `rust-toolchain.toml` (currently `1.95.0`, matching Zed) and installed automatically on first build.
+in `rust-toolchain.toml` (currently `1.97.1`, matching Zed) and installed automatically on first build.
 [`just`](https://github.com/casey/just) is recommended for the task recipes (`cargo install just`, or
 `brew install just` / your distro's package) — every recipe is plain `cargo` underneath, so it's
 optional. Plus:
@@ -263,10 +263,8 @@ it's developed against Zed's gpui **HEAD** — so the matched git pair is the on
 with the component kit. Why not crates.io? Zed publishes `gpui` there only rarely (the `0.2.x` line
 shipped Oct 2025 and nothing since), so the published `gpui-component` is pinned to an ~8-month-old gpui
 snapshot. Deck takes the fresh path and bumps on a cadence (`just bump-gpui`, ~monthly); the plain-stable
-crates.io pair (`gpui = "0.2"` + `gpui-component = "0.5"`) is documented as a zero-git **fallback** —
-which also sidesteps the GPL-3.0 binary obligation noted under [license](#credits--license), since the
-crates.io `gpui` pulls none of Zed's git-only logging crates. Full
-rationale + bump/fallback procedures in [LEARNINGS §2](docs/LEARNINGS.md#dependencies) and
+crates.io pair (`gpui = "0.2"` + `gpui-component = "0.5"`) is documented as a zero-git **fallback**.
+Full rationale + bump/fallback procedures are in [LEARNINGS §2](docs/LEARNINGS.md#dependencies) and
 [UPGRADING.md](docs/UPGRADING.md).
 
 ## Credits & license
@@ -276,21 +274,7 @@ Built on [Zed](https://github.com/zed-industries/zed) (GPUI) and
 [Lucide](https://lucide.dev) (ISC). Deck itself is 0BSD — zero-attribution, do whatever you want.
 See [NOTICE](NOTICE) for third-party attributions.
 
-**On the GPL crates — read this only if you ship a _closed-source_ binary.** Deck's default (git)
-channel links three of Zed's crates that are `GPL-3.0-or-later` — `zlog`, `ztracing`, `ztracing_macro`
-— via the chain `gpui → sum_tree → ztracing → zlog`. Deck didn't add them; Zed wired them into
-`sum_tree` ([PR #44147](https://github.com/zed-industries/zed/pull/44147), Dec 2025), and at Deck's
-default build they're inert no-ops (dormant Tracy instrumentation). GPL obligations attach only when
-you **distribute a binary**, so what this means depends on you:
-
-- **Build / run locally, or internal-only use** — nothing to do, on any channel.
-- **Open-source fork** — nothing to do: if your source is public, GPL-3.0's source-availability
-  requirement is met trivially (0BSD lets you fold your code into the combined work).
-- **Closed-source / proprietary binary** — you can't statically link GPL-3.0 code and keep the
-  result proprietary. Build on the permissive **crates.io pair** (`gpui = "0.2"`,
-  `gpui-component = "0.5"`) instead: its `gpui_sum_tree` carries none of Zed's git tracing crates, so
-  the binary is free of the GPL-3.0 chain. See [the dependency story](#tech-stack--the-dependency-story)
-  and [UPGRADING.md](docs/UPGRADING.md).
-
-Tracked upstream at [zed-industries/zed#55470](https://github.com/zed-industries/zed/issues/55470)
-(likely to resolve at the source). This is a summary, not legal advice — details in [NOTICE](NOTICE).
+The default git dependency tree is now permissive: Zed relicensed its `zlog`, `ztracing`, and
+`ztracing_macro` crates to Apache-2.0 in
+[PR #63573](https://github.com/zed-industries/zed/pull/63573). Deck's `cargo-deny` policy has no
+copyleft exceptions; a future license regression fails CI. This is a summary, not legal advice.

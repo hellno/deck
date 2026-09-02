@@ -1,0 +1,69 @@
+{% raw %}
+# Generated-app task runner. Install with `cargo install just` or your package manager.
+
+default:
+    @just --list
+
+run:
+    cargo run
+
+run-release:
+    cargo run --release
+
+run-tray:
+    cargo run --features tray
+
+run-overlay:
+    cargo run --features overlay
+
+screenshot out="docs/screenshot.png" features="" keys="":
+    bash scripts/screenshot.sh "{{out}}" "{{features}}" "{{keys}}"
+
+fmt:
+    cargo fmt
+
+check:
+    cargo clippy --locked --all-targets -- -D warnings
+    cargo clippy --locked --all-targets --features tray -- -D warnings
+    cargo clippy --locked --all-targets --features overlay -- -D warnings
+    cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
+
+ci:
+    cargo fmt --all --check
+    cargo clippy --locked --all-targets -- -D warnings
+    cargo clippy --locked --all-targets --features tray -- -D warnings
+    cargo clippy --locked --all-targets --features overlay -- -D warnings
+    cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
+    cargo test --locked
+    cargo test --locked --features overlay
+
+fix:
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features tray
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features overlay
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features tray,overlay
+    cargo fmt
+
+bump-gpui:
+    bash scripts/bump-gpui.sh
+
+bundle:
+    cargo bundle --release
+    @echo "→ Bundle written under target/release/bundle/"
+
+open: bundle
+    #!/usr/bin/env bash
+    set -euo pipefail
+    app_path="$(find target/release/bundle/osx -maxdepth 1 -type d -name '*.app' -print -quit)"
+    if [[ -z "$app_path" ]]; then
+        echo "No .app bundle found under target/release/bundle/osx" >&2
+        exit 1
+    fi
+    open "$app_path"
+
+icon:
+    python3 scripts/make-app-icon.py
+
+icon-linux:
+    python3 scripts/make-app-icon.py --linux --web
+{% endraw %}

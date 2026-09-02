@@ -26,6 +26,7 @@ Requires: Pillow (`pip install pillow`). The .icns step uses macOS `iconutil`.
 import argparse
 import math
 import os
+import shutil
 import subprocess
 import sys
 
@@ -111,7 +112,7 @@ def write_icns(master, out_dir):
         master.resize((sz, sz), Image.LANCZOS).save(os.path.join(iconset, name))
     icns = os.path.join(out_dir, "icon.icns")
     subprocess.run(["iconutil", "-c", "icns", iconset, "-o", icns], check=True)
-    subprocess.run(["rm", "-rf", iconset])
+    shutil.rmtree(iconset)
     return icns
 
 
@@ -155,9 +156,14 @@ def main():
     master = art if a.no_mask else masked_tile(art, body=824, shadow=not a.no_shadow)
     master_png = os.path.join(a.out, "icon.png")
     master.save(master_png)
-    icns = write_icns(master, a.out)
     print(f"icon.png  -> {master_png}")
-    print(f"icon.icns -> {icns}")
+    if sys.platform == "darwin":
+        icns = write_icns(master, a.out)
+        print(f"icon.icns -> {icns}")
+    elif a.linux or a.web:
+        print("icon.icns -> skipped (iconutil is macOS-only)")
+    else:
+        sys.exit("error: .icns generation needs macOS iconutil; pass --linux or --web here")
 
     if a.web or a.linux:
         fullbleed = art if a.no_mask else art.copy()

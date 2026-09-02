@@ -1,6 +1,6 @@
 # clippy knobs for Deck. why these (and why the wallet stuff is omitted): docs/AGENTIC-ENGINEERING.md
 
-msrv = "1.95.0"  # match rust-toolchain.toml
+msrv = "1.97.1"  # match rust-toolchain.toml
 
 # Deck is an APP, and the command_palette tests unwrap/expect/panic freely — keep them legal.
 allow-unwrap-in-tests = true

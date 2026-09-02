@@ -50,24 +50,24 @@ impl Accent {
     /// `(base, hover, active)` hex for the accent. `base` is also the swatch color.
     fn ramp(self) -> (&'static str, &'static str, &'static str) {
         match self {
-            Accent::Indigo => ("#6E78F0", "#828AF2", "#5A64E0"),
-            Accent::Blue => ("#3B82F6", "#5A95F7", "#2F6FE0"),
-            Accent::Violet => ("#8B5CF6", "#9D74F7", "#7A47E6"),
-            Accent::Emerald => ("#10B981", "#2DC894", "#0E9E6F"),
-            Accent::Amber => ("#F59E0B", "#F7AE2F", "#DB8C06"),
-            Accent::Rose => ("#F43F5E", "#F65A75", "#E02A4A"),
+            Accent::Indigo => ("#4F46E5", "#4338CA", "#3730A3"),
+            Accent::Blue => ("#2563EB", "#1D4ED8", "#1E40AF"),
+            Accent::Violet => ("#7C3AED", "#6D28D9", "#5B21B6"),
+            Accent::Emerald => ("#047857", "#065F46", "#064E3B"),
+            Accent::Amber => ("#B45309", "#92400E", "#78350F"),
+            Accent::Rose => ("#E11D48", "#BE123C", "#9F1239"),
         }
     }
 
     /// The swatch / mark color as an `0xRRGGBB` value, for `gpui::rgb(..)` in the UI.
     pub fn rgb(self) -> u32 {
         match self {
-            Accent::Indigo => 0x6E78F0,
-            Accent::Blue => 0x3B82F6,
-            Accent::Violet => 0x8B5CF6,
-            Accent::Emerald => 0x10B981,
-            Accent::Amber => 0xF59E0B,
-            Accent::Rose => 0xF43F5E,
+            Accent::Indigo => 0x4F46E5,
+            Accent::Blue => 0x2563EB,
+            Accent::Violet => 0x7C3AED,
+            Accent::Emerald => 0x047857,
+            Accent::Amber => 0xB45309,
+            Accent::Rose => 0xE11D48,
         }
     }
 }
@@ -138,5 +138,74 @@ fn refine(config: &mut ThemeConfig, accent: Accent, dark: bool) {
         set(&mut c.sidebar, "#F6F7F9");
         set(&mut c.accent, "#F1F2F4");
         set(&mut c.accent_foreground, "#16171D");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_component::ThemeConfig;
+
+    use super::{refine, Accent};
+
+    fn contrast_with_white(hex: &str) -> f64 {
+        let value = u32::from_str_radix(hex.trim_start_matches('#'), 16)
+            .expect("theme ramps contain valid six-digit hex colors");
+        let channel = |shift| {
+            let value = f64::from(((value >> shift) & 0xff_u32) as u8) / 255.0;
+            if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let luminance = 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
+        1.05 / (luminance + 0.05)
+    }
+
+    #[test]
+    fn every_primary_state_meets_aa_contrast_with_white_text() {
+        for accent in Accent::ALL {
+            for hex in [accent.ramp().0, accent.ramp().1, accent.ramp().2] {
+                let contrast = contrast_with_white(hex);
+                assert!(
+                    contrast >= 4.5,
+                    "{} {hex} has only {contrast:.2}:1 contrast",
+                    accent.label()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn swatch_rgb_matches_the_primary_ramp_color() {
+        for accent in Accent::ALL {
+            let ramp_rgb = u32::from_str_radix(accent.ramp().0.trim_start_matches('#'), 16)
+                .expect("theme ramps contain valid six-digit hex colors");
+            assert_eq!(accent.rgb(), ramp_rgb, "{} swatch drifted", accent.label());
+        }
+    }
+
+    #[test]
+    fn refine_applies_accessible_brand_tokens_in_both_modes() {
+        for dark in [false, true] {
+            for accent in Accent::ALL {
+                let mut config = ThemeConfig::default();
+                refine(&mut config, accent, dark);
+
+                assert_eq!(config.colors.primary.as_deref(), Some(accent.ramp().0));
+                assert_eq!(
+                    config.colors.primary_hover.as_deref(),
+                    Some(accent.ramp().1)
+                );
+                assert_eq!(
+                    config.colors.primary_active.as_deref(),
+                    Some(accent.ramp().2)
+                );
+                assert_eq!(config.colors.primary_foreground.as_deref(), Some("#FFFFFF"));
+                assert_eq!(config.colors.ring.as_deref(), Some(accent.ramp().0));
+                assert!(config.colors.background.is_some());
+                assert!(config.colors.foreground.is_some());
+            }
+        }
     }
 }

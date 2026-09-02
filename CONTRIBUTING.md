@@ -67,11 +67,11 @@ is pinned to exact commits in `Cargo.lock`. **Never hand-edit those pins.** Bump
 them only with:
 
 ```bash
-just bump-gpui   # cargo update on the four crates + rebuild
+just bump-gpui   # stage a full lockfile refresh, rebuild, then install it atomically
 ```
 
-then commit the updated `Cargo.lock` (and `rust-toolchain.toml` if the build
-needed a newer toolchain). Full procedure and the crates.io fallback channel:
+then run `just ci` and commit the updated `Cargo.lock` (and `rust-toolchain.toml`
+if the build needed a newer toolchain). Full procedure and the crates.io fallback channel:
 [`docs/UPGRADING.md`](docs/UPGRADING.md).
 
 ## Submitting a PR

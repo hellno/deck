@@ -29,15 +29,18 @@ GPUI stack is pinned in `Cargo.lock`; the toolchain is pinned in
 ## This repo is a cargo-generate template — don't break it
 
 Deck ships via `cargo generate gh:hellno/deck`. The files in `cargo-generate.toml`'s
-`include` list (`Cargo.toml`, `Cargo.lock`, `src/main.rs`, `src/settings.rs`,
-`src/overlay/mod.rs`, `scripts/make-app-icon.py`, `LICENSE`) hold `{{ }}` Liquid tokens,
-so **the raw repo does not `cargo run` / `cargo build`** — render it first.
+`include` list hold Liquid tokens, so **the raw repo does not `cargo run` /
+`cargo build`** — render it first. The `.liquid` files are generated-project
+overrides for README, agent guidance, recipes, and CI; cargo-generate strips the
+suffix and lets them replace the maintainer-facing files in the rendered app.
 
 - Verify template changes with **`just check-template`** (renders a project, then clippy +
   test). `just run` / `just ci` only work *inside a generated fork*.
 - Renaming a new literal? Add its file to `include` **and** add the `{{ }}` token — a literal
   in a non-included file ships as "deck" to every fork.
-- **Never** put a literal `{{` or `{%` in an included file (Liquid will try to parse it).
+- In a normal included file, every `{{` / `{%` must be intentional Liquid. In a
+  `.liquid` override, wrap syntax owned by another tool (Just/GitHub Actions) in
+  `{% raw %}` / `{% endraw %}`.
 - CI renders a throwaway project and builds THAT (`.github/workflows/ci.yml`).
 
 ## The loop (verify and self-correct without a CI round-trip)

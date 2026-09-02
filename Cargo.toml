@@ -48,7 +48,7 @@ gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
 # Preferences: serialize a Settings struct to the platform config dir.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-directories = "5"
+directories = "6"
 
 # --- Optional: menu-bar / tray apps (`--features tray`) — cross-platform ---
 # tray-icon draws a native status item on every OS: NSStatusItem (macOS),
@@ -100,4 +100,4 @@ osx_minimum_system_version = "11.0"
 # notices to travel with redistributed binaries, so cargo-bundle copies these
 # into the .app / .deb.
 resources = ["NOTICE", "LICENSE"]
-copyright = "Copyright (c) 2026 {{project-name | title_case}} contributors. 0BSD. Bundles Apache-2.0/ISC/GPL-3.0-or-later third-party code; see NOTICE."
+copyright = "Copyright (c) 2026 {{project-name | title_case}} contributors. 0BSD. Bundles Apache-2.0/ISC third-party code; see NOTICE."

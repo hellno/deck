@@ -30,7 +30,7 @@ permissions:
 # Cancel a still-running CI for a branch when a newer commit is pushed (faster feedback,
 # fewer minutes — the generated project's first git-gpui build is slow).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -55,19 +55,19 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: ${{ runner.temp }}/gen/deck-ci
-      # No --locked: the generated Cargo.lock's root entry is renamed at generate time, so
-      # cargo refreshes just that on first build (the git-gpui deps stay pinned).
+      # Cargo.lock is a processed template file, so the generated root entry already
+      # matches the generated crate name and every command can enforce reproducibility.
       - name: Build, lint, and test the generated project
         working-directory: ${{ runner.temp }}/gen/deck-ci
         run: |
-          cargo build
-          cargo build --features tray
-          cargo clippy --all-targets -- -D warnings
-          cargo clippy --all-targets --features tray -- -D warnings
-          cargo clippy --all-targets --features overlay -- -D warnings
-          cargo clippy --all-targets --features tray,overlay -- -D warnings
-          cargo test
-          cargo test --features overlay
+          cargo build --locked
+          cargo build --locked --features tray
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --features tray -- -D warnings
+          cargo clippy --locked --all-targets --features overlay -- -D warnings
+          cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
+          cargo test --locked
+          cargo test --locked --features overlay
 
   linux:
     runs-on: ubuntu-latest
@@ -102,13 +102,14 @@ jobs:
         working-directory: ${{ runner.temp }}/gen/deck-ci
         run: |
           cargo fmt --all --check
-          cargo build
-          cargo build --features tray
-          cargo clippy --all-targets -- -D warnings
-          cargo clippy --all-targets --features tray -- -D warnings
-          cargo clippy --all-targets --features overlay -- -D warnings
-          cargo test
-          cargo test --features overlay
+          cargo build --locked
+          cargo build --locked --features tray
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets --features tray -- -D warnings
+          cargo clippy --locked --all-targets --features overlay -- -D warnings
+          cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
+          cargo test --locked
+          cargo test --locked --features overlay
 
   # Supply-chain gate (advisories / bans / sources / licenses) via cargo-deny, run against
   # the GENERATED project (the raw template Cargo.toml has tokens and won't parse). REQUIRED:
