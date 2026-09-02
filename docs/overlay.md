@@ -329,7 +329,12 @@ P2 and P3 are independent; fixing one does not fix the other.
 2. With TextEdit foreground holding a caret, click a HUD **button** → assert TextEdit keeps focus (P2 fixed).
 3. Focus a GPUI **text input** inside the HUD → determine whether it can receive typing at all. If not, **document "no in-HUD text input"** as a known limitation (the Wispr model is global-hotkey-driven, so this is acceptable) and proceed; if yes, great.
 
-**Why NOT swizzle `canBecomeKeyWindow → NO`:** it's a class method on the shared `GPUIPanel` class (`gpui_macos/src/window.rs:125-129`), hitting every `PopUp`/`Floating`/`Dialog` window app-wide and brittle across `just bump-gpui`; it's also too strong (a never-key panel can never host text and never gets `keyDown:`). Per-instance is strictly safer. (Blast radius today is small — gpui-component opens only `WindowKind::Normal`, verified — but still.)
+**Why NOT swizzle `canBecomeKeyWindow → NO`:** it's an instance method installed on the shared
+`GPUIPanel` class (`gpui_macos/src/window.rs`, `build_window_class`), so replacing it hits every
+`PopUp`/`Floating`/`Dialog` window app-wide and is brittle across `just bump-gpui`; it's also too
+strong (a never-key panel can never host text and never gets `keyDown:`). Per-instance is strictly
+safer. (Blast radius today is small — gpui-component opens only `WindowKind::Normal`, verified —
+but still.)
 
 ### P3 — Click absorption / passthrough
 **`setIgnoresMouseEvents` is whole-window, all-or-nothing** — turn it on and the HUD's own buttons stop receiving clicks. So it is only a tool for fully passive overlays (cursor trails / screen-draw-idle, out of v1 scope), never the interactive HUD.
@@ -419,20 +424,19 @@ inside a fixed-size window (GPUI has no atomic window move/bounds setter).
 
 ## §1 — Verified API quick-reference (don't re-research; all checked against the pinned source)
 
-Pinned source (this machine): GPUI `~/.cargo/git/checkouts/zed-a70e2ad075855582/86effff/crates/{gpui,gpui_macos}`,
-gpui-component `~/.cargo/git/checkouts/gpui-component-95ce574d8a0da8b8/dadfca9`. (GPUI rev `86effffd…`,
-component rev `dadfca9…` from `Cargo.lock`; on another machine locate via `cargo metadata`.)
+Pinned source (this update): GPUI `8514ce3b…`, gpui-component `0c746dff…` (from `Cargo.lock`;
+locate the checkout on another machine via `cargo metadata`).
 Copyable examples live in `…/gpui/examples/`: `window_positioning.rs`, `animation.rs`, `opacity.rs`,
 `painting.rs`, `popover.rs`, `move_entity_between_windows.rs`.
 
 | Need | Symbol / call | Location |
 |---|---|---|
-| Open a window | `cx.open_window(opts, \|window, cx\| …) -> WindowHandle<Root>` | `gpui app.rs:1136`; pattern `main.rs:134-138` |
-| Always-on-top + non-activating + all-Spaces + hover-while-inactive | `WindowKind::PopUp` (NSPanel, `NSPopUpWindowLevel`=101, `CanJoinAllSpaces\|FullScreenAuxiliary`, `NSTrackingActiveAlways`) | `gpui_macos/src/window.rs:714-717,904-927,919` |
-| Borderless | `titlebar: None` | `gpui_macos/src/window.rs:689-708` |
-| Transparent bg | `WindowBackgroundAppearance::Transparent` | `gpui/src/platform.rs:1693` |
-| Root wrap — **only** when you need tooltip/notification/modal layers (it paints an opaque `theme.background`, so the redesigned transparent surfaces skip it) | `Root::new(view, window, cx)` | gpui-component `root.rs:89,513-531`; `main.rs:135-137` |
-| Active display + bounds (anchoring) | `cx.primary_display()`/`cx.displays()`; `PlatformDisplay::visible_bounds()` | `app.rs:1192,1197`; `platform.rs:262` |
+| Open a window | `cx.open_window(opts, \|window, cx\| …) -> WindowHandle<Root>` | `gpui/src/app.rs:1266`; see `src/main.rs` |
+| Always-on-top + non-activating + all-Spaces + hover-while-inactive | `WindowKind::PopUp` (NSPanel, `NSPopUpWindowLevel`=101, `CanJoinAllSpaces\|FullScreenAuxiliary`, `NSTrackingActiveAlways`) | `gpui_macos/src/window.rs:1144-1169` |
+| Borderless | `titlebar: None` | `gpui_macos/src/window.rs` window creation |
+| Transparent bg | `WindowBackgroundAppearance::Transparent` | `gpui/src/platform.rs:2223` |
+| Root wrap — **only** when you need tooltip/notification/modal layers (it paints an opaque `theme.background`, so the redesigned transparent surfaces skip it) | `Root::new(view, window, cx)` | gpui-component `root.rs:98,577-593`; see `src/main.rs` |
+| Active display + bounds (anchoring) | `cx.primary_display()`/`cx.displays()`; `PlatformDisplay::visible_bounds()` | `gpui/src/app.rs:1322-1327`; `platform.rs:358` |
 | Window move/bounds | **none** (`resize()` exists `window.rs:2217` but drifts — use fixed canvas) | `platform.rs:614-660` |
 | Run off UI thread (Send) | `cx.background_executor().spawn(fut)` | `executor.rs:89` |
 | Run async touching UI | `cx.spawn(async move \|cx\| …)` → `AsyncApp` | `async_context.rs:204` |

@@ -11,12 +11,13 @@
 [template]
 cargo_generate_version = ">=0.18.0"
 
-# ALLOWLIST: ONLY these files are processed for Liquid `{{ }}` tokens. Every other
-# file (justfile, README, .github/*, docs/*, the other src/*.rs) is copied verbatim,
-# so their braces/`${{ }}`/code are never touched.
+# ALLOWLIST: ONLY these files are processed for Liquid tokens. Every other file
+# (docs/* and the other src/*.rs) is copied verbatim, so its braces/code are never
+# touched. Maintainer-facing files with generated-project `.liquid` variants are
+# listed by their destination names below.
 #
 # ⚠️ Maintaining this: to rename a new literal, add its file here AND add the token.
-# NEVER put a literal `{{` or `{%` in an included file — Liquid would try to parse it.
+# In `.liquid` overrides, wrap Just/GitHub `${{ }}` syntax in Liquid raw blocks.
 include = [
     "Cargo.toml",
     # Cargo.lock's root [[package]] name must track Cargo.toml's, or `cargo --locked`
@@ -27,6 +28,27 @@ include = [
     "src/overlay/mod.rs",
     "scripts/make-app-icon.py",
     "LICENSE",
+    "NOTICE",
+    # Generated-project variants. cargo-generate strips `.liquid` and lets these
+    # overwrite the maintainer-facing files with fork-appropriate instructions.
+    # Match the destination names: cargo-generate strips `.liquid` before it
+    # applies this processing allow-list.
+    "README.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "justfile",
+    ".github/workflows/ci.yml",
+    ".github/dependabot.yml",
+]
+
+# Repository-governance files belong to the Deck template itself. A generated app
+# starts without upstream issue links, contributor policy, or maintainer contacts.
+ignore = [
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    ".github/ISSUE_TEMPLATE",
+    ".github/PULL_REQUEST_TEMPLATE.md",
 ]
 
 [placeholders]

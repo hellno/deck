@@ -32,7 +32,16 @@ run-overlay:
 # Overlay panels capture with transparency (leak-proof). Hover states still need a cursor
 # tool (e.g. `cliclick`) and are out of scope.
 screenshot out="docs/screenshot.png" features="" keys="":
-    bash scripts/screenshot.sh "{{out}}" "{{features}}" "{{keys}}"
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "$(dirname "{{out}}")"
+    output_path="$(cd "$(dirname "{{out}}")" && pwd)/$(basename "{{out}}")"
+    shot_dir="$(mktemp -d "${TMPDIR:-/tmp}/deck-template-shot.XXXXXX")"
+    trap 'rm -rf -- "$shot_dir"' EXIT
+    cargo generate --path "{{justfile_directory()}}" --name deck --silent --vcs none --destination "$shot_dir"
+    cd "$shot_dir/deck"
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-{{justfile_directory()}}/target/template-screenshot}"
+    bash scripts/screenshot.sh "$output_path" "{{features}}" "{{keys}}"
 
 # Format the code.
 fmt:
@@ -60,9 +69,14 @@ ci:
 # directly, so render a throwaway project (outside the repo, like CI) and lint + test that.
 # Needs cargo-generate (`cargo install cargo-generate`). Inside a generated fork, use `just ci`.
 check-template:
-    rm -rf "${TMPDIR:-/tmp}/deck-template-check"
-    cargo generate --path "{{justfile_directory()}}" --name app --silent --vcs none --destination "${TMPDIR:-/tmp}/deck-template-check"
-    cd "${TMPDIR:-/tmp}/deck-template-check/app" && cargo clippy --all-targets --features tray,overlay -- -D warnings && cargo test && cargo test --features overlay
+    #!/usr/bin/env bash
+    set -euo pipefail
+    check_dir="$(mktemp -d "${TMPDIR:-/tmp}/deck-template-check.XXXXXX")"
+    trap 'rm -rf -- "$check_dir"' EXIT
+    cargo generate --path "{{justfile_directory()}}" --name app --silent --vcs none --destination "$check_dir"
+    cd "$check_dir/app"
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-{{justfile_directory()}}/target/template-check}"
+    just ci
 
 # Auto-fix everything fixable: clippy's machine-applicable suggestions + formatting.
 # Re-run `just ci` afterwards to confirm green. (--allow-dirty so it works mid-edit.)
@@ -73,15 +87,14 @@ fix:
     cargo clippy --fix --allow-dirty --allow-staged --all-targets --features tray,overlay
     cargo fmt
 
-# Bump the git GPUI stack to the latest upstream commits, then rebuild.
-# Reproducibility lives in Cargo.lock — commit it (and rust-toolchain.toml if you
-# bumped it) after this succeeds. If the build fails on an unstable-feature error,
-# match rust-toolchain.toml to Zed's: https://github.com/zed-industries/zed/blob/main/rust-toolchain.toml
-# Full procedure + the crates.io fallback channel: docs/UPGRADING.md
+# Refresh the full dependency lockfile (including the git GPUI stack), then rebuild.
+# In this raw template repo the script stages the update in a generated project and
+# copies Cargo.lock back only after a successful build. In a generated fork it updates
+# in place and restores the old lockfile if the build fails. Optional escape hatches for
+# a temporarily-red upstream HEAD: GPUI_COMPONENT_REV=<sha> and ZED_REV=<sha>.
+# Full procedure + the crates.io fallback channel: docs/UPGRADING.md.
 bump-gpui:
-    cargo update -p gpui -p gpui_platform -p gpui-component -p gpui-component-assets
-    cargo build
-    @echo "→ Bumped. Run the app to smoke-test, then commit Cargo.lock (+ rust-toolchain.toml if changed)."
+    bash scripts/bump-gpui.sh
 
 # Build a distributable Deck.app (needs: cargo install cargo-bundle).
 # Output: target/release/bundle/osx/Deck.app

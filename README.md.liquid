@@ -1,0 +1,61 @@
+# {{project-name | title_case}}
+
+A native desktop app for macOS and Linux, built with
+[GPUI](https://www.gpui.rs/) and
+[gpui-component](https://github.com/longbridge/gpui-component).
+
+This project was generated from the [Deck](https://github.com/hellno/deck)
+starter. The crate name, display name, bundle identifier, config directory, and
+license have already been personalized for `{{project-name}}`.
+
+## Run it
+
+```bash
+cargo run
+```
+
+The first build compiles the git-pinned GPUI stack and can take several minutes.
+The exact Rust version is pinned in `rust-toolchain.toml` and rustup installs it
+automatically.
+
+Install the task runner once with `cargo install just` (or your package manager).
+The bundle recipe also needs `cargo install cargo-bundle`.
+
+Useful recipes:
+
+```bash
+just run          # normal desktop window
+just run-tray     # menu-bar / tray mode
+just run-overlay  # floating overlay demo (macOS; Linux builds as a no-op)
+just ci           # format, lint every feature combination, and test
+just bundle       # distributable app/package via cargo-bundle
+```
+
+## What is included
+
+- Native window, title bar, menus, and portable keyboard shortcuts
+- Command palette with fuzzy search, grouping, recents, and keyboard control
+- Dark/light theme and six selectable brand accents
+- Typed JSON settings in the platform config directory
+- Optional tray mode and macOS floating overlay surfaces
+- Reproducible git-pinned GPUI dependencies and cross-platform CI
+
+The app shell lives in `src/shell.rs`; replace `src/welcome.rs` with your product
+UI and add routes there. `src/command_palette.rs` is the command registry and
+`src/theme.rs` owns the visual tokens.
+
+## Make it yours
+
+1. Replace the welcome UI and starter copy.
+2. Drop your artwork at `assets/icon-source.png`, install Pillow, and run
+   `just icon` on macOS.
+3. Update `[package.metadata.bundle]` in `Cargo.toml` for your product category
+   and descriptions.
+4. Install `cargo-bundle` if needed, then run `just ci` and `just bundle`.
+
+Deep implementation notes inherited from the starter live in `docs/`, including
+GPUI patterns, background work, dependency upgrades, and overlay hardening.
+
+## License
+
+This generated project is 0BSD. Third-party notices are in [NOTICE](NOTICE).

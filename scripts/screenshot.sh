@@ -24,6 +24,7 @@
 # (a blank editor) or crop the result.
 #
 # Env: SHOT_DELAY    seconds to wait for first paint (default 3)
+#      SHOT_TIMEOUT  maximum seconds to wait for the built app to launch (default 120)
 #      SHOT_BACKDROP app to bring to front first, for a clean backdrop behind the tray
 #                    menu (e.g. "zed"); optional, tray mode only.
 set -euo pipefail
@@ -32,6 +33,7 @@ OUT="${1:-docs/screenshot.png}"
 FEATURES="${2:-}"
 KEYS="${3:-}"
 DELAY="${SHOT_DELAY:-3}"
+TIMEOUT="${SHOT_TIMEOUT:-120}"
 BACKDROP="${SHOT_BACKDROP:-}"
 
 [ "$(uname)" = "Darwin" ] || { echo "screenshot: macOS only (needs screencapture)"; exit 1; }
@@ -41,21 +43,51 @@ BASE="${OUT%.*}"; EXT="${OUT##*.}"
 # Optional clean backdrop (e.g. a blank editor) behind floating panels / the tray menu.
 [ -n "$BACKDROP" ] && { osascript -e "tell application \"$BACKDROP\" to activate" 2>/dev/null || true; sleep 1; }
 
-# Launch the app (debug build is fine; reuses the cargo cache).
-run_args=(run)
-[ -n "$FEATURES" ] && run_args+=(--features "$FEATURES")
-cargo "${run_args[@]}" >/dev/null 2>&1 &
-APP_PID=$!
-disown "$APP_PID" 2>/dev/null || true   # keep the shell from printing "Terminated" on cleanup
-cleanup() { pkill -P "$APP_PID" 2>/dev/null || true; kill "$APP_PID" 2>/dev/null || true; }
-trap cleanup EXIT
-sleep "$DELAY"
-
-# Identify the app process by its binary name (== cargo package name). Do NOT use
+# Identify the app process by its binary target name. Do NOT use
 # "frontmost": a `tray` build is a menu-bar accessory and never becomes frontmost.
 PROC=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin)["packages"][0]["name"])' 2>/dev/null)
-[ -n "$PROC" ] || PROC=$(osascript -e 'tell application "System Events" to get name of (first process whose frontmost is true)' 2>/dev/null)
+  | python3 -c 'import sys,json; p=json.load(sys.stdin)["packages"][0]; print(next(t["name"] for t in p["targets"] if "bin" in t["kind"]))' 2>/dev/null)
+TARGET_DIR=$(cargo metadata --no-deps --format-version 1 2>/dev/null \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["target_directory"])' 2>/dev/null)
+
+# Build first, then launch the exact binary ourselves. `cargo run` may exec the
+# binary or spawn it depending on Cargo/platform details, which makes PID-based
+# window capture race-prone.
+build_args=(build)
+[ -n "$FEATURES" ] && build_args+=(--features "$FEATURES")
+cargo "${build_args[@]}"
+RUN_LOG=$(mktemp "${TMPDIR:-/tmp}/deck-screenshot-run.XXXXXX")
+"$TARGET_DIR/debug/$PROC" >"$RUN_LOG" 2>&1 &
+APP_PID=$!
+BINARY_PID=$APP_PID
+disown "$APP_PID" 2>/dev/null || true   # keep the shell from printing "Terminated" on cleanup
+cleanup() {
+  pkill -P "$APP_PID" 2>/dev/null || true
+  kill "$APP_PID" 2>/dev/null || true
+  rm -f -- "$RUN_LOG"
+}
+trap cleanup EXIT
+ready=0
+for ((attempt = 0; attempt < TIMEOUT * 4; attempt++)); do
+  if osascript \
+      -e "tell application \"System Events\" to exists (first process whose unix id is $BINARY_PID)" \
+      2>/dev/null | grep -q true; then
+    ready=1
+    break
+  fi
+  if ! kill -0 "$APP_PID" 2>/dev/null; then
+    echo "screenshot: $PROC exited before its windows became available" >&2
+    cat "$RUN_LOG" >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+[ "$ready" = 1 ] || {
+  echo "screenshot: timed out after ${TIMEOUT}s waiting for process $PROC" >&2
+  cat "$RUN_LOG" >&2
+  exit 1
+}
+sleep "$DELAY"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 shot() { screencapture -x -o -R"$1" "$2" && echo "-> $2"; }
@@ -79,10 +111,17 @@ capture_window() {
     fi
     sleep 0.7
   fi
-  local b
-  b=$(osascript -e "tell application \"System Events\" to tell process \"$PROC\" to get {position, size} of front window" 2>/dev/null | tr -d ' ')
-  [ -n "$b" ] || { echo "screenshot: no front window found for process $PROC"; return 1; }
-  shot "$b" "$OUT"
+  local helper="$SCRIPT_DIR/winid.swift" id
+  { command -v swift >/dev/null && [ -f "$helper" ]; } || {
+    echo "screenshot: needs swift + scripts/winid.swift"; return 1;
+  }
+  # Window-id capture is exact on Retina/scaled displays; region capture mixes
+  # AppleScript points with screencapture pixels and can include the desktop.
+  id=$(swift "$helper" "$BINARY_PID" 2>/dev/null \
+    | awk '$2 * $3 > area { area = $2 * $3; id = $1 } END { print id }')
+  [ -n "$id" ] || { echo "screenshot: no front window found for process $PROC"; return 1; }
+  screencapture -x -o -l"$id" "$OUT"
+  echo "-> $OUT"
 }
 
 capture_overlay() {
@@ -105,20 +144,20 @@ im = Image.open(sys.argv[1]).convert("RGBA"); b = im.getbbox()
 if b: im.crop(b).save(sys.argv[1])
 PY
     echo "-> $f"; got=1
-  done < <(swift "$helper" "$PROC" 2>/dev/null)
+  done < <(swift "$helper" "$BINARY_PID" 2>/dev/null)
   [ "$got" = 1 ] || { echo "screenshot(overlay): no panels found for $PROC"; return 1; }
 }
 
 capture_tray() {
   # Menu-bar status item: find it, click to open its native menu, capture the corner.
-  local pos sx sy rx
-  pos=$(osascript -e "tell application \"System Events\" to tell process \"$PROC\" to get position of menu bar item 1 of menu bar 2" 2>/dev/null | tr -d ' ')
+  local pos sx rx
+  pos=$(osascript -e "tell application \"System Events\" to tell (first process whose unix id is $BINARY_PID) to get position of menu bar item 1 of menu bar 2" 2>/dev/null | tr -d ' ')
   [ -n "$pos" ] || { echo "screenshot(tray): no status item found for process $PROC"; return 1; }
-  IFS=',' read -r sx sy <<< "$pos"
+  IFS=',' read -r sx _ <<< "$pos"
   # NB: do NOT re-activate the backdrop here — bringing another app to the front
   # right before the click suppresses the status-item menu. Rely on the backdrop
   # already being frontmost (the overlay pass, or SHOT_BACKDROP before launch).
-  osascript -e "tell application \"System Events\" to tell process \"$PROC\" to click menu bar item 1 of menu bar 2" >/dev/null 2>&1 &
+  osascript -e "tell application \"System Events\" to tell (first process whose unix id is $BINARY_PID) to click menu bar item 1 of menu bar 2" >/dev/null 2>&1 &
   local click=$!; sleep 1.2
   rx=$(( sx - 110 < 0 ? 0 : sx - 110 ))
   shot "${rx},0,300,170" "$OUT"

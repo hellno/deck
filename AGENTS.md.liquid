@@ -1,0 +1,55 @@
+# AGENTS.md
+
+Guidance for coding agents working in `{{project-name}}`. `CLAUDE.md` contains
+the same rules. Rationale for the lint and CI policy lives in
+`docs/AGENTIC-ENGINEERING.md`.
+
+## Project shape
+
+This is a single Rust crate generated from the Deck GPUI starter. It targets
+macOS and Linux, with optional `tray` and `overlay` features. The git GPUI stack
+is pinned in `Cargo.lock`, and `rust-toolchain.toml` matches Zed's toolchain.
+
+- `src/main.rs` opens the window and wires menus, shortcuts, and features.
+- `src/shell.rs` is the root view and routing/state owner.
+- `src/command_palette.rs` owns commands and fuzzy-match tests.
+- `src/welcome.rs` is starter UI intended to be replaced.
+- `src/settings.rs` and `src/settings_view.rs` own persisted preferences.
+- `src/theme.rs` owns dark/light palettes and accents.
+- `src/tray.rs` and `src/overlay/` are feature-gated platform surfaces.
+
+## Working loop
+
+- Use `cargo check` for fast type checking and `just run` to launch.
+- Use `just fix` for machine-applicable clippy fixes plus formatting.
+- Run `just ci` before declaring a change done. It checks formatting, clippy
+  with `-D warnings` on all four feature combinations, and tests.
+- For UI changes, use `just screenshot` on macOS and inspect the actual image.
+
+## Definition of done
+
+1. `cargo fmt --all --check` is clean.
+2. Clippy is green for default, `tray`, `overlay`, and `tray,overlay`.
+3. Default and overlay tests pass.
+4. Dependency changes are intentional, reviewed, and reflected in `Cargo.lock`.
+
+## Code constraints
+
+- No `todo!()` or `dbg!()`; both are denied.
+- Never ignore a `Result`. Propagate it or handle it deliberately.
+- `unsafe_code` is denied. A necessary escape hatch needs a scoped allow and a
+  reviewed `// SAFETY:` explanation.
+- `.expect()` is acceptable for genuinely infallible GPUI handles; prefer
+  `Result` and `?` elsewhere.
+- Keep I/O and network work off the UI thread. Update memory and notify first,
+  then persist on a background executor or at a coarse commit boundary.
+- Keep volatile state in its own `Entity<T>` so notifications repaint the
+  smallest useful subtree.
+- Use `uniform_list` or `list` for large collections and filter in memory.
+
+## Dependencies
+
+Refresh the dependency lockfile with `just bump-gpui`, then run `just ci` and a
+runtime smoke test. The script restores the previous lockfile when an update
+does not build. Do not hand-edit git SHAs in `Cargo.lock`; see
+`docs/UPGRADING.md` for known-green revision overrides.
