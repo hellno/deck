@@ -123,7 +123,10 @@ impl Shell {
                                 Button::new("docs")
                                     .ghost()
                                     .label("Documentation")
-                                    .icon(IconName::BookOpen),
+                                    .icon(IconName::BookOpen)
+                                    .on_click(|_, _, cx| {
+                                        cx.open_url("https://github.com/hellno/deck#readme")
+                                    }),
                             ),
                     )
                     .child(if self.created > 0 {

@@ -22,7 +22,10 @@ use gpui::{
     px, size, App, AppContext, Bounds, KeyBinding, Menu, MenuItem, OsAction, WindowBounds,
     WindowOptions,
 };
-use gpui_component::{Root, TitleBar};
+use gpui_component::{
+    input::{Copy, Cut, Paste, Redo, SelectAll, Undo},
+    Root, TitleBar,
+};
 
 use settings::Settings;
 use shell::Shell;
@@ -77,13 +80,11 @@ fn main() {
                 KeyBinding::new("secondary-k", TogglePalette, None),
             ]);
 
-            // 4. Global action handlers. View-local actions (NewItem, OpenSettings,
-            //    ToggleTheme, GoBack) are handled inside `Shell` so they can touch
-            //    UI state and persist; only app-wide ones live here.
+            // 4. Global action handlers. View-local actions (About, NewItem,
+            //    OpenSettings, ToggleTheme, GoBack) are handled inside `Shell` so
+            //    they can touch the active window or UI state; only app-wide ones
+            //    live here.
             cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
-            cx.on_action(|_: &About, _cx: &mut App| {
-                println!("{APP_NAME} — a GPUI app.");
-            });
 
             // 5. The native macOS menu bar.
             cx.set_menus(vec![
@@ -107,12 +108,13 @@ fn main() {
                     name: "Edit".into(),
                     disabled: false,
                     items: vec![
-                        MenuItem::os_action("Undo", NewItem, OsAction::Undo),
+                        MenuItem::os_action("Undo", Undo, OsAction::Undo),
+                        MenuItem::os_action("Redo", Redo, OsAction::Redo),
                         MenuItem::separator(),
-                        MenuItem::os_action("Cut", NewItem, OsAction::Cut),
-                        MenuItem::os_action("Copy", NewItem, OsAction::Copy),
-                        MenuItem::os_action("Paste", NewItem, OsAction::Paste),
-                        MenuItem::os_action("Select All", NewItem, OsAction::SelectAll),
+                        MenuItem::os_action("Cut", Cut, OsAction::Cut),
+                        MenuItem::os_action("Copy", Copy, OsAction::Copy),
+                        MenuItem::os_action("Paste", Paste, OsAction::Paste),
+                        MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
                     ],
                 },
                 Menu {
@@ -133,7 +135,7 @@ fn main() {
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: Some(TitleBar::title_bar_options()),
-                window_min_size: Some(size(px(560.0), px(420.0))),
+                window_min_size: Some(size(px(640.0), px(520.0))),
                 ..Default::default()
             };
 

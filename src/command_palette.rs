@@ -576,7 +576,7 @@ impl ListDelegate for PaletteDelegate {
 // ===========================================================================
 
 /// How far the panel floats from the top of the window.
-const TOP_OFFSET: f32 = 112.0;
+const TOP_OFFSET: f32 = 64.0;
 const PANEL_WIDTH: f32 = 620.0;
 
 impl Shell {
@@ -812,5 +812,45 @@ mod tests {
         // "set" matches the title — included, with highlight ranges.
         let (_, ranges) = score_command("set", &settings).unwrap();
         assert!(!ranges.is_empty());
+    }
+
+    #[test]
+    fn empty_recents_do_not_create_a_fake_recent_section() {
+        let delegate = PaletteDelegate::new(Vec::new());
+
+        assert!(delegate
+            .sections
+            .iter()
+            .all(|section| section.title != "Recent"));
+        assert_eq!(
+            delegate
+                .sections
+                .iter()
+                .map(|section| section.rows.len())
+                .sum::<usize>(),
+            delegate.all.len()
+        );
+    }
+
+    #[test]
+    fn recent_commands_are_lifted_without_being_duplicated() {
+        let delegate = PaletteDelegate::new(vec!["settings"]);
+        let recent = delegate
+            .sections
+            .iter()
+            .find(|section| section.title == "Recent")
+            .expect("a known recent command creates the Recent section");
+
+        assert_eq!(recent.rows.len(), 1);
+        assert_eq!(recent.rows[0].cmd.id, "settings");
+        assert_eq!(
+            delegate
+                .sections
+                .iter()
+                .flat_map(|section| &section.rows)
+                .filter(|hit| hit.cmd.id == "settings")
+                .count(),
+            1
+        );
     }
 }

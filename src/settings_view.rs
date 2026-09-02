@@ -5,15 +5,13 @@
 //! field would persist on blur instead (see `shell.rs`). Template for your own.
 
 use gpui::{
-    div, px, rgb, AnyElement, Context, FontWeight, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, Window,
+    div, px, rgb, AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, Window,
 };
 use gpui_component::{
     button::{Button, ButtonVariants},
     h_flex,
     input::Input,
-    switch::Switch,
-    v_flex, ActiveTheme,
+    v_flex, ActiveTheme, Selectable,
 };
 
 use crate::settings::{Settings, ThemeModePref};
@@ -31,7 +29,6 @@ impl Shell {
         let muted = theme.muted_foreground;
         let border = theme.border;
         let surface = theme.secondary;
-        let ring = theme.ring;
 
         let mode = self.settings.theme_mode;
         let accent = self.settings.accent;
@@ -86,31 +83,33 @@ impl Shell {
             .child(mode_button("mode-light", "Light", ThemeModePref::Light))
             .into_any_element();
 
-        // Accent: a row of clickable swatches; the active one gets a ring.
+        // Accent: semantic, keyboard-focusable buttons; the active one gets a
+        // foreground-colored ring that remains visible over every accent.
         let accent_control = h_flex()
             .gap_2()
             .children(Accent::ALL.iter().map(|&a| {
                 let selected = a == accent;
-                div()
-                    .id(a.label())
+                Button::new(a.label())
+                    .ghost()
                     .size(px(24.0))
                     .rounded_full()
                     .bg(rgb(a.rgb()))
                     .border_2()
-                    .border_color(if selected { ring } else { ring.opacity(0.0) })
+                    .border_color(if selected {
+                        foreground
+                    } else {
+                        foreground.opacity(0.0)
+                    })
+                    .selected(selected)
+                    .accessibility_label(format!("Use {} accent", a.label()))
+                    .tooltip(a.label())
                     .on_click(cx.listener(move |this, _, _, cx| this.set_accent(a, cx)))
             }))
             .into_any_element();
 
-        let name_control = Input::new(&self.name_input).w(px(220.0)).into_any_element();
-
-        let launch_control = Switch::new("launch-min")
-            .checked(self.settings.launch_minimized)
-            .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                this.settings.launch_minimized = *checked;
-                this.settings.save_best_effort();
-                cx.notify();
-            }))
+        let name_control = Input::new(&self.name_input)
+            .aria_label("Display name")
+            .w(px(220.0))
             .into_any_element();
 
         v_flex().flex_1().items_center().p_8().child(
@@ -125,20 +124,11 @@ impl Shell {
                         .child(row("Accent", "Brand color across the app", accent_control)),
                 )
                 .child(section_label("Profile", muted))
-                .child(
-                    card()
-                        .child(row(
-                            "Display name",
-                            "Used to greet you on the home screen",
-                            name_control,
-                        ))
-                        .child(divider(border))
-                        .child(row(
-                            "Start in menu bar",
-                            "Launch minimized (needs the `tray` feature)",
-                            launch_control,
-                        )),
-                )
+                .child(card().child(row(
+                    "Display name",
+                    "Used to greet you on the home screen",
+                    name_control,
+                )))
                 .child(div().pt_2().text_xs().text_color(muted).child(format!(
                     "Preferences are stored at {}",
                     Settings::config_path_display()
