@@ -41,7 +41,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/gen" && cd "$RUNNER_TEMP/gen"
           cargo generate --path "$GITHUB_WORKSPACE" --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
       # rust-toolchain.toml (copied into the project) pins the compiler; rustup installs it.
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: ${{ runner.temp }}/gen/deck-ci
       - name: just ci (fmt, clippy on both feature sets, test, build)
@@ -69,7 +69,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/gen" && cd "$RUNNER_TEMP/gen"
           cargo generate --path "$GITHUB_WORKSPACE" --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
-      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: ${{ runner.temp }}/gen/deck-ci
       - name: just ci (fmt, clippy on both feature sets, test, build)
