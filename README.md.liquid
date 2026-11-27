@@ -1,61 +1,36 @@
-# {{project-name | title_case}}
+# {{app_name}}
 
-A native desktop app for macOS and Linux, built with
-[GPUI](https://www.gpui.rs/) and
-[gpui-component](https://github.com/longbridge/gpui-component).
-
-This project was generated from the [Deck](https://github.com/hellno/deck)
-starter. The crate name, display name, bundle identifier, config directory, and
-license have already been personalized for `{{project-name}}`.
+A native desktop app for macOS and Linux, built with [GPUI](https://www.gpui.rs/) via
+[GPUI Kit](https://github.com/longbridge/gpui-kit).
 
 ## Run it
 
 ```bash
-cargo run
+cargo run          # or: just run
 ```
 
-The first build compiles the git-pinned GPUI stack and can take several minutes.
-The exact Rust version is pinned in `rust-toolchain.toml` and rustup installs it
-automatically.
-
-Install the task runner once with `cargo install just` (or your package manager).
-The bundle recipe also needs `cargo install cargo-bundle`.
-
-Useful recipes:
+The first build compiles GPUI and takes a few minutes. Rust is pinned in
+`rust-toolchain.toml`; rustup installs it. Recipes need [`just`](https://github.com/casey/just)
+(`cargo install just`); bundling needs `cargo install cargo-bundle`. On Linux, first install
+the system packages listed in `.github/workflows/ci.yml`.
 
 ```bash
-just run          # normal desktop window
 just run-tray     # menu-bar / tray mode
-just run-overlay  # floating overlay demo (macOS; Linux builds as a no-op)
-just ci           # format, lint every feature combination, and test
-just bundle       # distributable app/package via cargo-bundle
+just dry-run      # separate settings file, doesn't take focus
+just shot settings dark /tmp/settings.png   # headless screenshot, no window
+just ci           # format, lint both feature sets, test, build
+just install      # bundle + replace the copy in /Applications (macOS)
 ```
-
-## What is included
-
-- Native window, title bar, menus, and portable keyboard shortcuts
-- Command palette with fuzzy search, grouping, recents, and keyboard control
-- Dark/light theme and six selectable brand accents
-- Typed JSON settings in the platform config directory
-- Optional tray mode and macOS floating overlay surfaces
-- Reproducible git-pinned GPUI dependencies and cross-platform CI
-
-The app shell lives in `src/shell.rs`; replace `src/welcome.rs` with your product
-UI and add routes there. `src/command_palette.rs` is the command registry and
-`src/theme.rs` owns the visual tokens.
 
 ## Make it yours
 
-1. Replace the welcome UI and starter copy.
-2. Drop your artwork at `assets/icon-source.png`, install Pillow, and run
-   `just icon` on macOS.
-3. Update `[package.metadata.bundle]` in `Cargo.toml` for your product category
-   and descriptions.
-4. Install `cargo-bundle` if needed, then run `just ci` and `just bundle`.
+1. Replace `src/home.rs`. Its New Item command is also wired up in `src/lib.rs`,
+   `src/shell.rs` and `src/palette.rs`.
+2. Drop 1024×1024 artwork at `assets/icon-source.png` and run `just icon` (macOS, Pillow).
+3. Adjust `[package.metadata.bundle]` in `Cargo.toml` (category, descriptions).
 
-Deep implementation notes inherited from the starter live in `docs/`, including
-GPUI patterns, background work, dependency upgrades, and overlay hardening.
+`AGENTS.md` covers the code layout, the checks and upgrading GPUI. `docs/` has GPUI notes.
 
 ## License
 
-This generated project is 0BSD. Third-party notices are in [NOTICE](NOTICE).
+0BSD. Third-party notices are in [NOTICE](NOTICE).

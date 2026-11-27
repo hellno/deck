@@ -17,68 +17,50 @@ Good upstream contributions:
 - **Cross-platform correctness** — anything that keeps the same code working on
   both macOS and Linux.
 - **Docs** — clarifications to `README.md`, `docs/LEARNINGS.md`, or
-  `docs/UPGRADING.md`; hard-won GPUI gotchas are valuable.
+  hard-won GPUI gotchas are valuable.
 - **Small, focused features** that stay true to "kept small" — the starter is
-  ~700 lines on purpose.
+  small on purpose.
 
 Probably out of scope: large frameworks, your app's domain logic, or anything
 that bloats the starter. When in doubt, open an issue first.
 
-## The rules (single-sourced in `CLAUDE.md` / `AGENTS.md`)
+## The rules
 
-The contributor rules and the agent rules are the same rules. The authoritative
-copy — including the full **Definition of Done**, the code constraints, and the
-performance rules — lives in **[`CLAUDE.md`](CLAUDE.md)** (mirrored verbatim in
-[`AGENTS.md`](AGENTS.md)). The *why* behind every lint and gate is in
-[`docs/AGENTIC-ENGINEERING.md`](docs/AGENTIC-ENGINEERING.md). Read those before a
-non-trivial change; the essentials are restated below.
+The contributor rules and the agent rules are the same: [`AGENTS.md`](AGENTS.md) (template
+mechanics, Definition of Done) and the generated app's guide, `AGENTS.md.liquid`. The *why*
+behind each lint and gate is in [`docs/AGENTIC-ENGINEERING.md`](docs/AGENTIC-ENGINEERING.md).
 
 ## The loop
 
-Install [`just`](https://github.com/casey/just) (`brew install just`), then:
+This repo is a cargo-generate template and does not build directly. Install
+[`just`](https://github.com/casey/just) and `cargo-generate`, then:
 
 ```bash
-just run     # run the app (default features)
-just fix     # auto-apply clippy's machine-fixable suggestions + format
-just ci      # the FULL Definition of Done in one command (run before you push)
+just check-template                     # render a project and run its `just ci`
+just shot settings dark /tmp/s.png      # headless screenshot of the rendered app
 ```
 
-`just ci` mirrors `.github/workflows/ci.yml`, so **green locally == green in
-CI.** Loop `just fix` → `just ci` to self-correct without a CI round-trip.
+New files must be staged (`git add`) before `just check-template` sees them.
 
 ## Definition of Done
 
-A change is done only when all of these hold — `just ci` checks them at once.
-**Don't open a PR while anything is red.**
+1. `just check-template` is green: fmt, clippy `-D warnings` on default and
+   `--all-features`, tests, and a binary build.
+2. UI changes: `just shot` in light and dark, attached to the PR.
+3. **No new or changed dependencies** without maintainer approval; open an issue first.
+4. Upgrading GPUI: bump `gpui-kit` in `Cargo.toml`, then `just update-lock -p gpui-kit`
+   (see `AGENTS.md`).
 
-1. `cargo fmt --all --check` is clean.
-2. `clippy -D warnings` is green on **every** feature config: default, `tray`,
-   `overlay`, and `tray,overlay` (`just check`).
-3. `cargo test` is green — including `cargo test --features overlay` (the
-   `command_palette` fuzzy-match tests and the overlay reducers live here).
-4. **No new or changed dependencies** in `Cargo.toml` / `Cargo.lock` without
-   explicit maintainer approval — open an issue to discuss first. A new store or
-   network client is a new dep and is approval-gated.
+## Commits
 
-### Bumping GPUI
-
-The `gpui` / `gpui_platform` / `gpui-component` / `gpui-component-assets` stack
-is pinned to exact commits in `Cargo.lock`. **Never hand-edit those pins.** Bump
-them only with:
-
-```bash
-just bump-gpui   # stage a full lockfile refresh, rebuild, then install it atomically
-```
-
-then run `just ci` and commit the updated `Cargo.lock` (and `rust-toolchain.toml`
-if the build needed a newer toolchain). Full procedure and the crates.io fallback channel:
-[`docs/UPGRADING.md`](docs/UPGRADING.md).
+`type(scope): summary` (`fix(palette): …`, `docs: …`), then why, with the commands behind
+it. Docs describe what exists now; history lives in git.
 
 ## Submitting a PR
 
 1. Branch off `main`.
-2. Make the change; run `just ci` until green.
-3. Open a PR and fill in the template — paste the `just ci` output as evidence
+2. Make the change; run `just check-template` until green.
+3. Open a PR and fill in the template — paste the `just check-template` output as evidence
    and confirm the no-new-deps box.
 
 Contributions are accepted under the project's [`0BSD`](LICENSE) license.

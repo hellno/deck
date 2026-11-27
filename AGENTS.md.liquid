@@ -1,55 +1,99 @@
 # AGENTS.md
 
-Guidance for coding agents working in `{{project-name}}`. `CLAUDE.md` contains
-the same rules. Rationale for the lint and CI policy lives in
-`docs/AGENTIC-ENGINEERING.md`.
+How to work in {{app_name}} (`{{project-name}}`), a native GPUI desktop app for macOS and
+Linux. This is the only agent guide; `CLAUDE.md` imports it.
 
-## Project shape
+## Shape
 
-This is a single Rust crate generated from the Deck GPUI starter. It targets
-macOS and Linux, with optional `tray` and `overlay` features. The git GPUI stack
-is pinned in `Cargo.lock`, and `rust-toolchain.toml` matches Zed's toolchain.
+One crate: a library (the app) plus a thin binary. GPUI, gpui-component and the bundled
+icons come from one crates.io dependency, `gpui-kit`: import GPUI as `gpui_kit::*` and
+components as `gpui_kit::component::*`.
 
-- `src/main.rs` opens the window and wires menus, shortcuts, and features.
-- `src/shell.rs` is the root view and routing/state owner.
-- `src/command_palette.rs` owns commands and fuzzy-match tests.
-- `src/welcome.rs` is starter UI intended to be replaced.
-- `src/settings.rs` and `src/settings_view.rs` own persisted preferences.
-- `src/theme.rs` owns dark/light palettes and accents.
-- `src/tray.rs` and `src/overlay/` are feature-gated platform surfaces.
+- `src/main.rs`: command line only. Unknown arguments exit 2.
+- `src/lib.rs`: actions, shortcuts, menus, `run` and the main window.
+- `src/launch.rs`: the `APP_*` environment variables, including the dry-run switch.
+- `src/shell.rs`: the root view (page state, settings, title bar). The pages are `impl Shell`
+  blocks in `home.rs` and `settings_view.rs`.
+- `src/palette.rs`: the ⌘K command palette.
+- `src/ui.rs`: `group` and `row` for settings-style layouts.
+- `src/theme.rs`: 13 px type, greys, the accent. `src/settings.rs`: JSON preferences.
+- `src/tray.rs` (`--features tray`), `src/login_item.rs` (macOS).
+- `examples/shot.rs`: headless screenshots.
 
-## Working loop
+## The loop
 
-- Use `cargo check` for fast type checking and `just run` to launch.
-- Use `just fix` for machine-applicable clippy fixes plus formatting.
-- Run `just ci` before declaring a change done. It checks formatting, clippy
-  with `-D warnings` on all four feature combinations, and tests.
-- For UI changes, use `just screenshot` on macOS and inspect the actual image.
+- `cargo run` / `just run`. Build before you run: a stale `target/debug` binary doesn't know
+  new flags (it exits 2 on them) or new code.
+- `just ci` before calling anything done: fmt check, clippy `-D warnings` on default and
+  `--all-features`, tests, and builds of both. Paste its output; never claim done while red.
+- `just fix` applies clippy's machine fixes and formats.
+
+## Seeing the UI without taking over the desktop
+
+- **`just shot <home|settings> <light|dark> out.png`** renders the real views with the real
+  renderer into a 2x PNG: no window, no Dock icon, no focus change, identical across runs.
+  `APP_FIXTURES=1 just shot home dark out.png` shows sample data. It needs the GPU, so it
+  fails inside sandboxes like macOS Seatbelt: run it outside, or ask the user to. It renders
+  the view only (no traffic lights or window shadow).
+- **`just dry-run`** (`APP_DRY_RUN=1 cargo run`) launches the real app without activating it,
+  using `settings.dry-run.json`, with nothing irreversible (no login-item changes).
+  `APP_PAGE=settings` and `APP_APPEARANCE=dark` start it in a given state.
+- Never drive the app with global keystrokes or UI scripting: they land in whatever app is
+  frontmost. To reach a state, add an `APP_*` variable in `src/launch.rs`. To check an
+  interaction, write a test with `gpui_kit::test` (see the tests in `src/shell.rs`).
 
 ## Definition of done
 
-1. `cargo fmt --all --check` is clean.
-2. Clippy is green for default, `tray`, `overlay`, and `tray,overlay`.
-3. Default and overlay tests pass.
-4. Dependency changes are intentional, reviewed, and reflected in `Cargo.lock`.
+1. `just ci` is green.
+2. UI changes: `just shot` in light and dark, and you looked at both images.
+3. No new or changed dependencies unless the user approved them.
 
-## Code constraints
+## Code
 
-- No `todo!()` or `dbg!()`; both are denied.
-- Never ignore a `Result`. Propagate it or handle it deliberately.
-- `unsafe_code` is denied. A necessary escape hatch needs a scoped allow and a
-  reviewed `// SAFETY:` explanation.
-- `.expect()` is acceptable for genuinely infallible GPUI handles; prefer
-  `Result` and `?` elsewhere.
-- Keep I/O and network work off the UI thread. Update memory and notify first,
-  then persist on a background executor or at a coarse commit boundary.
-- Keep volatile state in its own `Entity<T>` so notifications repaint the
-  smallest useful subtree.
-- Use `uniform_list` or `list` for large collections and filter in memory.
+- Comments explain a non-obvious why: a gotcha, a constraint, a choice that looks wrong.
+  Don't restate the code or narrate history; git has the history.
+- Docs describe what exists now. Delete a sentence when it stops being true.
+- No `todo!()` or `dbg!()`. Never ignore a `Result` (`unused_must_use` is denied).
+- `unsafe_code` is denied; a necessary exception needs a scoped allow and a `// SAFETY:` comment.
+- `.expect()` is fine for genuinely infallible GPUI calls; prefer `?` elsewhere.
+- Shortcuts go in `shortcuts()` (`src/lib.rs`), bound with `KeyBinding::load`:
+  `KeyBinding::new` panics at launch on `secondary-`. A test parses every shortcut.
+- A command is one action with a menu item, an optional shortcut and a palette row
+  (`src/palette.rs`), so all three run one handler and the row shows the shortcut.
+- Tray menu handlers call functions (`show_main_window`), not actions: with no focused window
+  an action reaches nothing.
 
-## Dependencies
+## Look and feel
 
-Refresh the dependency lockfile with `just bump-gpui`, then run `just ci` and a
-runtime smoke test. The script restores the previous lockfile when an update
-does not build. Do not hand-edit git SHAs in `Cargo.lock`; see
-`docs/UPGRADING.md` for known-green revision overrides.
+- Body text is `text_base` (13 px), secondary text `text_sm`. Nothing smaller in your own views.
+- Build from components (`TitleBar`, `TabBar::segmented`, `GroupBox` via `ui::group`,
+  `Switch`, `Select`, `Empty`, `Alert`, `Dialog`, `Form`/`field`, `Command`), not hand-drawn
+  look-alikes.
+- Gotchas: tabs in the title bar need a `prevent_default` mouse-down wrapper or clicking them
+  drags the window; the segmented indicator is drawn in `background`, so the track
+  (`tab_bar_segmented`) is darker in dark mode; `Field` descriptions default to `text_xs`;
+  gpui-component's `setting` renderers are crate-private (hence `ui.rs`); the palette renders
+  inside `Shell`, not in a `Dialog`, or its rows' actions never reach Shell's handlers.
+
+## Performance
+
+The UI thread never waits on the network or a large file: run that on
+`cx.background_executor()` and `cx.notify()` when it's done. A small write at a coarse
+boundary (a click, a blur) can stay synchronous, as the settings do; never write per keystroke.
+Notify the smallest entity that changed and render long lists with `uniform_list`. More in
+`docs/LEARNINGS.md` and `docs/background-jobs.md`.
+
+## Upgrading GPUI
+
+1. Bump `gpui-kit` in `Cargo.toml`. If the new release needs a newer Rust, bump
+   `rust-version` there and `channel` in `rust-toolchain.toml` together.
+2. `cargo update -p gpui-kit`
+3. `just ci`
+4. `just run` and `just shot`: some breakage only shows at runtime.
+5. `cargo deny --all-features check licenses`
+
+## Shipping
+
+`just bundle` builds the `.app`; `just install` signs it ad hoc and replaces the copy in
+`/Applications`. macOS notifications need the app launched from a bundle; "Open at login"
+needs the installed copy.

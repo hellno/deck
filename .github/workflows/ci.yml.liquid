@@ -20,26 +20,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The same gate as `just ci` locally, plus cargo-deny below.
   macos:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
+        with:
+          tool: just
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Build, lint, and test
-        run: |
-          cargo build --locked
-          cargo build --locked --features tray
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo clippy --locked --all-targets --features tray -- -D warnings
-          cargo clippy --locked --all-targets --features overlay -- -D warnings
-          cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
-          cargo test --locked
-          cargo test --locked --features overlay
+      - run: just ci
 
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      # GPUI needs X11/Wayland/Vulkan/fonts; the tray feature needs GTK + appindicator.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -49,18 +45,11 @@ jobs:
             libwayland-dev libvulkan-dev \
             libfontconfig1-dev libfreetype6-dev libssl-dev \
             libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+      - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
+        with:
+          tool: just
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Format-check, build, lint, and test
-        run: |
-          cargo fmt --all --check
-          cargo build --locked
-          cargo build --locked --features tray
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo clippy --locked --all-targets --features tray -- -D warnings
-          cargo clippy --locked --all-targets --features overlay -- -D warnings
-          cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
-          cargo test --locked
-          cargo test --locked --features overlay
+      - run: just ci
 
   cargo-deny:
     runs-on: ubuntu-latest
@@ -69,5 +58,5 @@ jobs:
       - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: cargo-deny
-      - run: cargo deny check advisories bans sources licenses
+      - run: cargo deny --all-features check advisories bans sources licenses
 {% endraw %}

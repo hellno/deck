@@ -29,8 +29,8 @@ sharing any details.
 
 Please include:
 
-- the affected commit (the `gpui`/`deck` commit you're on),
-- OS and feature flags in play (`default` / `tray` / `overlay`),
+- the affected Deck commit and `gpui-kit` version,
+- OS and feature flags in play (`default` / `tray`),
 - a description of the issue and, ideally, a minimal reproduction.
 
 This is a single-maintainer project, so there is no formal SLA — expect a

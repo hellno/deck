@@ -1,37 +1,11 @@
-# cargo-deny — supply-chain gate for Deck (advisories / licenses / bans / sources).
-#
-# Run locally:
-#   cargo install cargo-deny
-#   cargo deny check
-#
-# Why this file looks the way it does (the rationale, per-knob): docs/AGENTIC-ENGINEERING.md §4.
-#
-# Deck is a single-crate GPUI + Rust desktop-app starter (no [workspace]). Its own
-# crate is licensed 0BSD, so cargo-deny — which license-checks first-party crates too —
-# must allow 0BSD in the main list below. The configuration is intentionally
-# exception-free: every linked dependency must match the permissive allow-list.
+# Supply-chain policy, checked in CI: `cargo deny --all-features check`.
 
-# ---------------------------------------------------------------------------
-# Advisories — RustSec security (vulnerability) + unmaintained-crate advisories.
-# ---------------------------------------------------------------------------
 [advisories]
-# Security VULNERABILITY advisories are denied by default everywhere — that hard gate stays.
-# The softer "unmaintained" class is scoped to "workspace": flag an unmaintained crate only when
-# Deck depends on it DIRECTLY (something a maintainer can act on), not when it's buried in the git
-# gpui stack (async-std, instant, paste, rustls-pemfile, … — upstream's to fix and unavoidable
-# here). A real vulnerability anywhere in the tree still fails the build.
+# Unmaintained crates only count when they are direct dependencies; vulnerability advisories
+# apply to the whole tree.
 unmaintained = "workspace"
 yanked = "deny"
-ignore = []  # add { id = "RUSTSEC-…", reason = "…" } to silence a specific advisory, with justification
 
-# ---------------------------------------------------------------------------
-# Licenses — allow a permissive superset. Every dependency (and Deck's own 0BSD
-# crate) must resolve to one of these.
-#
-# This list is SEEDED and currently passes (`cargo deny check licenses` is green against the
-# committed Cargo.lock). The git gpui stack is large and licenses drift between bumps, so re-run
-# `cargo deny check licenses` after every `just bump-gpui` and reconcile any new entries.
-# ---------------------------------------------------------------------------
 [licenses]
 version = 2
 confidence-threshold = 0.9
@@ -41,55 +15,27 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
-    "0BSD",          # Deck's own crate — BSD Zero Clause, zero-attribution, fork-friendly
+    "0BSD",
     "ISC",
     "Unicode-3.0",
     "Zlib",
     "MPL-2.0",
     "Unlicense",
     "CC0-1.0",
-    "bzip2-1.0.6",   # libbz2-rs-sys — permissive BSD-style bzip2 license
+]
+exceptions = [
+    # Only under cfg(fuzzing), via rav1e, so never built into the app. cargo-deny checks every cfg.
+    { crate = "libfuzzer-sys", allow = ["NCSA"] },
 ]
 
-# ---------------------------------------------------------------------------
-# Bans — duplicate versions, wildcard requirements, and explicitly-denied crates.
-# ---------------------------------------------------------------------------
 [bans]
-# allow, not deny: the cross-platform GPUI graph legitimately pulls many target-
-# specific duplicate versions. The resulting warnings are thousands of lines and
-# not actionable in this leaf crate; advisories remain denied across every version.
+# GPUI's platform dependencies need several versions of some crates.
 multiple-versions = "allow"
-# allow, not deny: Deck's gpui stack (gpui, gpui_platform, gpui-component, gpui-component-assets)
-# is pulled from git WITHOUT version requirements — reproducibility comes from the pinned
-# Cargo.lock, not semver. cargo-deny reads those unversioned git deps as wildcards, so `deny` is
-# permanently red on Deck's OWN deps (allow-wildcard-paths only covers path deps on unpublished
-# crates, not git deps). The "no new deps without approval" rule in CLAUDE.md is the human gate
-# against a stray crates.io `*`.
-wildcards = "allow"
+wildcards = "deny"
 deny = [
     { crate = "openssl", reason = "prefer rustls/ring; avoid OpenSSL CVE surface" },
 ]
 
-# ---------------------------------------------------------------------------
-# Sources — only crates.io and the known git origins are allowed.
-#
-# allow-git below is the six active git origins Deck currently depends on (the Zed
-# GPUI stack + gpui-component), written in the EXACT form Cargo.lock records them — note
-# the `.git` suffix on reqwest and xim-rs, which Zed pins that way. (cargo-deny happens
-# to normalize the suffix away when matching, but the exact form is match-proof if that
-# ever changes.) Cargo.lock also records GPUI's inactive optional `scap` source;
-# cargo-deny correctly ignores that unreachable package and would warn if it were
-# pre-allowed. After every `just bump-gpui`, let `cargo deny check sources` identify
-# newly reachable origins rather than copying every source from the lockfile.
-# ---------------------------------------------------------------------------
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = [
-    "https://github.com/zed-industries/zed",
-    "https://github.com/zed-industries/font-kit",
-    "https://github.com/zed-industries/reqwest.git",
-    "https://github.com/zed-industries/wasm_thread",
-    "https://github.com/zed-industries/xim-rs.git",
-    "https://github.com/longbridge/gpui-component",
-]

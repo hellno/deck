@@ -1,58 +1,64 @@
 # cargo-generate template config for Deck.
 #
-# Deck is a cargo-generate TEMPLATE. Forkers run:
 #   cargo install cargo-generate
-#   cargo generate gh:hellno/deck --name my-app   # answer the bundle-org prompt
+#   cargo generate gh:hellno/deck --name my-app            # prompts for display name + bundle id
+#   cargo generate gh:hellno/deck --name catchy-tv -d app_name="Catchy TV" --silent
 #
-# The files in `include` below contain {{ }} Liquid tokens, so the raw repo does
-# NOT build directly — CI generates a project first, then builds it. See
-# .github/workflows/ci.yml and the "cargo-generate template" note in CLAUDE.md.
+# The files in `include` contain {{ }} Liquid tokens, so the raw repo does NOT build
+# directly. `just check-template` (and CI) generate a project first, then build that.
 
 [template]
 cargo_generate_version = ">=0.18.0"
 
-# ALLOWLIST: ONLY these files are processed for Liquid tokens. Every other file
-# (docs/* and the other src/*.rs) is copied verbatim, so its braces/code are never
-# touched. Maintainer-facing files with generated-project `.liquid` variants are
-# listed by their destination names below.
-#
-# ⚠️ Maintaining this: to rename a new literal, add its file here AND add the token.
-# In `.liquid` overrides, wrap Just/GitHub `${{ }}` syntax in Liquid raw blocks.
+# ALLOWLIST: ONLY these files are processed for Liquid tokens; everything else is copied
+# verbatim. To personalize a new literal, add its file here AND add the token. In `.liquid`
+# overrides, wrap Just/GitHub `${{ }}` syntax in {% raw %} blocks.
 include = [
     "Cargo.toml",
-    # Cargo.lock's root [[package]] name must track Cargo.toml's, or `cargo --locked`
-    # (in the generated fork's `just ci`) fails on the renamed root package.
+    # Cargo.lock's root [[package]] name must track Cargo.toml's, or `--locked` fails.
     "Cargo.lock",
     "src/main.rs",
+    "src/lib.rs",
     "src/settings.rs",
-    "src/overlay/mod.rs",
+    "examples/shot.rs",
     "scripts/make-app-icon.py",
     "LICENSE",
     "NOTICE",
-    # Generated-project variants. cargo-generate strips `.liquid` and lets these
-    # overwrite the maintainer-facing files with fork-appropriate instructions.
-    # Match the destination names: cargo-generate strips `.liquid` before it
-    # applies this processing allow-list.
+    # Generated-project variants: cargo-generate strips `.liquid` and these overwrite the
+    # maintainer-facing files. List them by their destination names.
     "README.md",
     "AGENTS.md",
-    "CLAUDE.md",
     "justfile",
     ".github/workflows/ci.yml",
     ".github/dependabot.yml",
 ]
 
-# Repository-governance files belong to the Deck template itself. A generated app
-# starts without upstream issue links, contributor policy, or maintainer contacts.
+# Repository-governance files belong to the Deck template itself, not to a generated app.
 ignore = [
     "CONTRIBUTING.md",
     "CODE_OF_CONDUCT.md",
     "SECURITY.md",
     ".github/ISSUE_TEMPLATE",
     ".github/PULL_REQUEST_TEMPLATE.md",
+    "template-hooks",
+    # Deck's own README screenshots, logo source and setup essay.
+    "docs/screenshot.png",
+    "docs/screenshot-settings.png",
+    "docs/screenshot-palette.png",
+    "docs/AGENTIC-ENGINEERING.md",
+    "assets/icon.svg",
 ]
 
 [placeholders]
-# Reverse-DNS bundle identifier parts. `{{project-name}}` (from --name) is the third
-# segment, so the full id is `{{bundle_qualifier}}.{{bundle_org}}.{{project-name}}`.
+# The name people see (menus, window, bundle). cargo-generate kebab-cases `--name`, and
+# Liquid's title_case would turn "Catchy TV" into "Catchy Tv", so ask for it verbatim.
+# Empty (and under --silent) = title-cased project name; see template-hooks/app-name.rhai.
+# No quotes, backslashes, slashes, `$` or backticks: it lands in Rust/TOML strings, the .app
+# path and a shell variable in `just install`.
+app_name = { type = "string", prompt = "Display name, exactly as shown in menus (empty = from project name)", default = "", regex = '^[^"\\/$`]*$' }
+# Reverse-DNS bundle identifier: `{{bundle_qualifier}}.{{bundle_org}}.{{project-name}}`.
 bundle_qualifier = { type = "string", prompt = "Bundle ID qualifier (reverse-DNS top segment)", default = "com", regex = "^[a-z][a-z0-9]*$" }
 bundle_org = { type = "string", prompt = "Bundle ID organization (reverse-DNS, e.g. your name or company)", default = "example", regex = "^[a-z0-9][a-z0-9-]*$" }
+
+[hooks]
+pre = ["template-hooks/app-name.rhai"]

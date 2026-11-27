@@ -1,15 +1,11 @@
 name: CI
 
-# Deck is a cargo-generate TEMPLATE: its tracked source contains {{ }} Liquid tokens
-# (see cargo-generate.toml `include`) and so does NOT build directly. Every job below
-# therefore GENERATES a throwaway project from the template first, then builds / lints /
-# tests THAT. Editing the template? Read the "cargo-generate template" note in CLAUDE.md.
+# Deck is a cargo-generate TEMPLATE: its source carries {{ }} Liquid tokens (see
+# cargo-generate.toml `include`) and does NOT build directly. Each job renders a throwaway
+# project and runs that project's own gate (`just ci`), the same one forks get.
 #
-# COST: free. Standard GitHub-hosted runners (macos-latest, ubuntu-latest) are free +
-# unlimited on PUBLIC repos — the macOS 10x multiplier only burns quota on PRIVATE repos.
-# If you ever make this repo private, gate the `macos` job to tags to avoid eating minutes:
-#     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
-# (Don't switch to "*-large" runners — those are billed even on public repos.)
+# Standard GitHub-hosted runners are free on public repos. If this repo goes private, gate
+# the macOS job to tags/PRs; don't switch to "*-large" runners (billed even when public).
 
 on:
   push:
@@ -21,14 +17,13 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Rendered outside the checkout: a nested cargo project confuses cargo (rust-lang/cargo#9922),
+  # and cargo-generate run from inside the template deletes the template's hook file.
+  GEN: ${{ github.workspace }}/../gen
 
-# Least-privilege GITHUB_TOKEN: this workflow only checks out, generates, builds, lints,
-# tests, and runs cargo-deny — it needs read access to repo contents and nothing else.
 permissions:
   contents: read
 
-# Cancel a still-running CI for a branch when a newer commit is pushed (faster feedback,
-# fewer minutes — the generated project's first git-gpui build is slow).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -38,93 +33,69 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      # Prebuilt cargo-generate (fast, deterministic — no compile). SHA-pinned;
-      # Dependabot (github-actions) keeps it current.
       - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
-          tool: cargo-generate
-      # Render the template into a sibling dir (NOT inside the repo — a nested cargo
-      # project confuses cargo, see rust-lang/cargo#9922). --silent uses the placeholder
-      # defaults (bundle_qualifier=com, bundle_org=example).
+          tool: cargo-generate,just
       - name: Generate a project from the template
         run: |
-          mkdir -p "$RUNNER_TEMP/gen"
-          cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
-      # No toolchain pin here: rust-toolchain.toml (copied into the generated project) is
-      # the single source of truth; rustup auto-installs it on the first cargo call.
+          mkdir -p "$GEN" && cd "$GEN"
+          cargo generate --path "$GITHUB_WORKSPACE" --name deck-ci --silent --vcs none --destination "$GEN"
+      # rust-toolchain.toml (copied into the project) pins the compiler; rustup installs it.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          workspaces: ${{ runner.temp }}/gen/deck-ci
-      # Cargo.lock is a processed template file, so the generated root entry already
-      # matches the generated crate name and every command can enforce reproducibility.
-      - name: Build, lint, and test the generated project
-        working-directory: ${{ runner.temp }}/gen/deck-ci
-        run: |
-          cargo build --locked
-          cargo build --locked --features tray
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo clippy --locked --all-targets --features tray -- -D warnings
-          cargo clippy --locked --all-targets --features overlay -- -D warnings
-          cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
-          cargo test --locked
-          cargo test --locked --features overlay
+          workspaces: ${{ env.GEN }}/deck-ci
+      - name: just ci (fmt, clippy on both feature sets, test, build)
+        working-directory: ${{ env.GEN }}/deck-ci
+        run: just ci
 
   linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      # System libraries GPUI needs on Linux (X11 + Wayland + Vulkan + fonts), plus
-      # GTK/appindicator for the optional tray feature.
+      # GPUI needs X11/Wayland/Vulkan/fonts; the tray feature needs GTK + appindicator.
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config \
             libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libwayland-dev \
-            libvulkan-dev \
-            libfontconfig1-dev libfreetype6-dev \
-            libssl-dev \
+            libwayland-dev libvulkan-dev \
+            libfontconfig1-dev libfreetype6-dev libssl-dev \
             libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
       - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
-          tool: cargo-generate
+          tool: cargo-generate,just
       - name: Generate a project from the template
         run: |
-          mkdir -p "$RUNNER_TEMP/gen"
-          cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
+          mkdir -p "$GEN" && cd "$GEN"
+          cargo generate --path "$GITHUB_WORKSPACE" --name deck-ci --silent --vcs none --destination "$GEN"
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          workspaces: ${{ runner.temp }}/gen/deck-ci
-      # Formatting is OS-independent, so gate `cargo fmt --check` once on the cheaper
-      # Linux runner. The overlay feature is a compile-only no-op on Linux (no LayerShell).
-      - name: Format-check, build, lint, and test the generated project
-        working-directory: ${{ runner.temp }}/gen/deck-ci
-        run: |
-          cargo fmt --all --check
-          cargo build --locked
-          cargo build --locked --features tray
-          cargo clippy --locked --all-targets -- -D warnings
-          cargo clippy --locked --all-targets --features tray -- -D warnings
-          cargo clippy --locked --all-targets --features overlay -- -D warnings
-          cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
-          cargo test --locked
-          cargo test --locked --features overlay
+          workspaces: ${{ env.GEN }}/deck-ci
+      - name: just ci (fmt, clippy on both feature sets, test, build)
+        working-directory: ${{ env.GEN }}/deck-ci
+        run: just ci
 
-  # Supply-chain gate (advisories / bans / sources / licenses) via cargo-deny, run against
-  # the GENERATED project (the raw template Cargo.toml has tokens and won't parse). REQUIRED:
-  # a deny.toml violation fails the build.
-  cargo-deny:
+  # Supply-chain gate on the generated project (the raw Cargo.toml has tokens), plus a check
+  # that a display name survives generation verbatim.
+  template:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       - uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
         with:
           tool: cargo-generate,cargo-deny
-      - name: Generate a project from the template
+      - name: Generate "Catchy TV"
         run: |
-          mkdir -p "$RUNNER_TEMP/gen"
-          cargo generate --path . --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
+          mkdir -p "$GEN" && cd "$GEN"
+          cargo generate --path "$GITHUB_WORKSPACE" --name catchy-tv -d app_name="Catchy TV" --silent --vcs none --destination "$GEN"
+      - name: Display name is verbatim, and no "Deck" leaks into the app
+        working-directory: ${{ env.GEN }}/catchy-tv
+        run: |
+          grep -q 'APP_NAME: &str = "Catchy TV"' src/lib.rs
+          grep -q '^# Catchy TV$' README.md
+          grep -q 'Catchy TV contributors' LICENSE
+          if grep -rIn -i '\bdeck\b' src examples Cargo.toml justfile AGENTS.md README.md docs scripts; then exit 1; fi
       - name: cargo-deny check
-        working-directory: ${{ runner.temp }}/gen/deck-ci
-        run: cargo deny check advisories bans sources licenses
+        working-directory: ${{ env.GEN }}/catchy-tv
+        run: cargo deny --all-features check advisories bans sources licenses

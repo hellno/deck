@@ -1,7 +1,5 @@
 /target
 **/*.rs.bk
 .DS_Store
-# cargo-bundle output
-/target/release/bundle
-# generated icon extras (just icon-linux / --web)
+# just icon-linux output
 /dist

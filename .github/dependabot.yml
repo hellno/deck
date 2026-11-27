@@ -1,9 +1,8 @@
 # Dependabot configuration for Deck — GitHub Actions only.
 #
 # No `cargo` ecosystem on purpose: this repo is a cargo-generate template, so Cargo.toml's
-# package name is a `{{ }}` token and Dependabot's cargo parser rejects it. (It would add
-# little here anyway — the GPUI stack is git-pinned and bumped via `just bump-gpui`, and
-# Dependabot ignores git deps.) A generated fork has real names, so cargo updates work there.
+# package name is a `{{ }}` token and Dependabot's cargo parser rejects it. A generated app
+# has real names, so its dependabot.yml (from dependabot.yml.liquid) includes cargo.
 version: 2
 updates:
   # GitHub Actions — keeps the SHA-pinned actions in ci.yml current.

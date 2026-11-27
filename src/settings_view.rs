@@ -1,150 +1,82 @@
-//! The Settings page — rendered by `Shell` when the route is `Settings`.
-//! Every control writes straight back into `self.settings` and persists via
-//! `save_best_effort()`, and theme changes apply live. These controls fire at
-//! click frequency, so a synchronous best-effort write is fine here; a text
-//! field would persist on blur instead (see `shell.rs`). Template for your own.
-
-use gpui::{
-    div, px, rgb, AnyElement, Context, FontWeight, IntoElement, ParentElement, Styled, Window,
-};
-use gpui_component::{
-    button::{Button, ButtonVariants},
-    h_flex,
-    input::Input,
-    v_flex, ActiveTheme, Selectable,
+use gpui_kit::{
+    Context,
+    component::{ActiveTheme as _, alert::Alert, select::Select, separator::Separator, v_flex},
+    div,
+    prelude::*,
+    px,
 };
 
-use crate::settings::{Settings, ThemeModePref};
-use crate::shell::Shell;
-use crate::theme::Accent;
+use crate::{shell::Shell, ui};
 
 impl Shell {
-    pub fn render_settings(
-        &self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
-        let theme = cx.theme();
-        let foreground = theme.foreground;
-        let muted = theme.muted_foreground;
-        let border = theme.border;
-        let surface = theme.secondary;
+    pub(crate) fn render_settings(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let appearance = ui::row(
+            "Appearance",
+            Some("Light, dark, or match the system".into()),
+            div()
+                .flex_none()
+                .w(px(140.0))
+                .child(Select::new(&self.appearance_select).accessibility_label("Appearance")),
+            cx,
+        );
+        let saved_to = match self.file.path() {
+            Some(path) => format!("Settings are saved to {}", path.display()),
+            None => "Settings aren't saved in this session.".to_string(),
+        };
 
-        let mode = self.settings.theme_mode;
-        let accent = self.settings.accent;
-
-        // One settings row: title + description on the left, a control on the right.
-        let row = move |title: &str, desc: &str, control: AnyElement| {
-            h_flex()
-                .w_full()
-                .py_3()
+        v_flex().flex_1().items_center().p_6().child(
+            v_flex()
+                .w(px(480.0))
                 .gap_4()
-                .items_center()
-                .justify_between()
-                .child(
-                    v_flex()
-                        .gap_0p5()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(foreground)
-                                .child(title.to_string()),
-                        )
-                        .child(div().text_xs().text_color(muted).child(desc.to_string())),
+                .children(
+                    self.settings_problem
+                        .clone()
+                        .map(|problem| Alert::warning("settings-problem", problem)),
                 )
-                .child(control)
-        };
-
-        // A bordered card that groups rows with separators.
-        let card = move || {
-            v_flex()
-                .w_full()
-                .px_4()
-                .rounded_xl()
-                .border_1()
-                .border_color(border)
-                .bg(surface)
-        };
-
-        // Theme mode: two buttons, the active one is `primary`.
-        let mode_button = |id: &'static str, label: &'static str, value: ThemeModePref| {
-            let button = Button::new(id)
-                .label(label)
-                .on_click(cx.listener(move |this, _, _, cx| this.set_mode(value, cx)));
-            if mode == value {
-                button.primary()
-            } else {
-                button.ghost()
-            }
-        };
-        let theme_control = h_flex()
-            .gap_1()
-            .child(mode_button("mode-dark", "Dark", ThemeModePref::Dark))
-            .child(mode_button("mode-light", "Light", ThemeModePref::Light))
-            .into_any_element();
-
-        // Accent: semantic, keyboard-focusable buttons; the active one gets a
-        // foreground-colored ring that remains visible over every accent.
-        let accent_control = h_flex()
-            .gap_2()
-            .children(Accent::ALL.iter().map(|&a| {
-                let selected = a == accent;
-                Button::new(a.label())
-                    .ghost()
-                    .size(px(24.0))
-                    .rounded_full()
-                    .bg(rgb(a.rgb()))
-                    .border_2()
-                    .border_color(if selected {
-                        foreground
-                    } else {
-                        foreground.opacity(0.0)
-                    })
-                    .selected(selected)
-                    .accessibility_label(format!("Use {} accent", a.label()))
-                    .tooltip(a.label())
-                    .on_click(cx.listener(move |this, _, _, cx| this.set_accent(a, cx)))
-            }))
-            .into_any_element();
-
-        let name_control = Input::new(&self.name_input)
-            .aria_label("Display name")
-            .w(px(220.0))
-            .into_any_element();
-
-        v_flex().flex_1().items_center().p_8().child(
-            v_flex()
-                .w(px(540.0))
-                .gap_6()
-                .child(section_label("Appearance", muted))
                 .child(
-                    card()
-                        .child(row("Theme", "Light or dark interface", theme_control))
-                        .child(divider(border))
-                        .child(row("Accent", "Brand color across the app", accent_control)),
+                    ui::group("General").child(appearance).children(
+                        self.render_login_item(cx)
+                            .map(|row| v_flex().child(Separator::horizontal()).child(row)),
+                    ),
                 )
-                .child(section_label("Profile", muted))
-                .child(card().child(row(
-                    "Display name",
-                    "Used to greet you on the home screen",
-                    name_control,
-                )))
-                .child(div().pt_2().text_xs().text_color(muted).child(format!(
-                    "Preferences are stored at {}",
-                    Settings::config_path_display()
-                ))),
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(saved_to),
+                ),
         )
     }
-}
 
-fn section_label(title: &str, color: gpui::Hsla) -> impl IntoElement {
-    div()
-        .text_xs()
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(color)
-        .child(title.to_uppercase())
-}
+    #[cfg(target_os = "macos")]
+    fn render_login_item(&self, cx: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
+        use gpui_kit::component::{Disableable as _, switch::Switch};
 
-fn divider(color: gpui::Hsla) -> impl IntoElement {
-    div().h(px(1.0)).w_full().bg(color)
+        let detail = if self.login_item.available() {
+            "Start automatically when you log in"
+        } else if self.dry_run {
+            "Off during a dry run"
+        } else {
+            "Available when the app is in Applications"
+        };
+        let switch = Switch::new("open-at-login")
+            .checked(self.login_item.enabled())
+            .disabled(!self.login_item.available())
+            .accessibility_label("Open at login")
+            .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                if let Err(err) = this.login_item.set_enabled(*checked) {
+                    eprintln!(
+                        "{}: could not change the login item: {err}",
+                        crate::APP_NAME
+                    );
+                }
+                cx.notify();
+            }));
+        Some(ui::row("Open at login", Some(detail.into()), switch, cx).into_any_element())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn render_login_item(&self, _: &mut Context<Self>) -> Option<gpui_kit::AnyElement> {
+        None
+    }
 }
