@@ -1,164 +1,44 @@
-//! Deck — an omakase native desktop app starter on GPUI (macOS + Linux).
-//!
-//! `main` wires the native shell: a window with a custom title bar, the system
-//! menu bar, global keyboard shortcuts, a refined theme, and persisted settings.
-//! The UI lives in `shell.rs` (+ `welcome.rs` / `settings_view.rs`).
-//!
-//! Fork checklist: rename the crate in `Cargo.toml`, change `APP_NAME` and the
-//! bundle identifier, swap `assets/icon.png`, then start editing the views.
+use std::process::ExitCode;
 
-mod command_palette;
-#[cfg(feature = "overlay")]
-mod overlay;
-mod settings;
-mod settings_view;
-mod shell;
-mod theme;
-#[cfg(feature = "tray")]
-mod tray;
-mod welcome;
+const USAGE: &str = "usage: {{project-name}} [--help] [--version]
 
-use gpui::{
-    px, size, App, AppContext, Bounds, KeyBinding, Menu, MenuItem, OsAction, WindowBounds,
-    WindowOptions,
-};
-use gpui_component::{
-    input::{Copy, Cut, Paste, Redo, SelectAll, Undo},
-    Root, TitleBar,
-};
+environment (see src/launch.rs):
+  APP_DRY_RUN=1          separate settings file, no activation, nothing irreversible
+  APP_PAGE=<page>        start on a page: home | settings
+  APP_APPEARANCE=<mode>  system | light | dark, for this run only
+  APP_FIXTURES=1         seed sample data";
 
-use settings::Settings;
-use shell::Shell;
-
-/// The display name used in the menu bar and window. Change this first when forking.
-pub const APP_NAME: &str = "{{project-name | title_case}}";
-
-// Declare the app's actions. Each becomes a zero-sized struct you can bind a key
-// to, hang a menu item off of, and handle in a view or globally. Add your own here.
-gpui::actions!(
-    {{crate_name}},
-    [
-        Quit,
-        About,
-        OpenSettings,
-        ToggleTheme,
-        NewItem,
-        GoBack,
-        TogglePalette
-    ]
-);
-
-fn main() {
-    // `with_assets` registers gpui-component's bundled icon SVGs + fonts so
-    // `IconName::*` renders. This is the whole asset story for the UI kit.
-    // `application()` lives in `gpui_platform` after Zed split gpui into core +
-    // platform crates; it returns the same `gpui::Application` builder.
-    gpui_platform::application()
-        .with_assets(gpui_component_assets::Assets)
-        .run(|cx: &mut App| {
-            // 1. Bring up gpui-component (themes, fonts, icon assets, input system).
-            gpui_component::init(cx);
-
-            // 2. Load persisted preferences and install the refined theme from them.
-            let settings = Settings::load();
-            #[cfg(feature = "tray")]
-            let accent = settings.accent;
-            // Snapshot the overlay-relevant settings BEFORE `settings` moves into the
-            // Shell closure (mirrors how `accent` is captured above for tray).
-            #[cfg(feature = "overlay")]
-            let overlay_settings = settings.clone();
-            theme::install(cx, settings.accent, settings.theme_mode.to_gpui());
-
-            // 3. Keyboard shortcuts. `secondary` = ⌘ on macOS, Ctrl on Linux /
-            //    Windows — so these are portable. Context `None` = global.
-            cx.bind_keys([
-                KeyBinding::new("secondary-q", Quit, None),
-                KeyBinding::new("secondary-n", NewItem, None),
-                KeyBinding::new("secondary-,", OpenSettings, None),
-                KeyBinding::new("secondary-shift-d", ToggleTheme, None),
-                KeyBinding::new("secondary-[", GoBack, None),
-                KeyBinding::new("secondary-k", TogglePalette, None),
-            ]);
-
-            // 4. Global action handlers. View-local actions (About, NewItem,
-            //    OpenSettings, ToggleTheme, GoBack) are handled inside `Shell` so
-            //    they can touch the active window or UI state; only app-wide ones
-            //    live here.
-            cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
-
-            // 5. The native macOS menu bar.
-            cx.set_menus(vec![
-                Menu {
-                    name: APP_NAME.into(),
-                    disabled: false,
-                    items: vec![
-                        MenuItem::action(format!("About {APP_NAME}"), About),
-                        MenuItem::separator(),
-                        MenuItem::action("Settings…", OpenSettings),
-                        MenuItem::separator(),
-                        MenuItem::action(format!("Quit {APP_NAME}"), Quit),
-                    ],
-                },
-                Menu {
-                    name: "File".into(),
-                    disabled: false,
-                    items: vec![MenuItem::action("New", NewItem)],
-                },
-                Menu {
-                    name: "Edit".into(),
-                    disabled: false,
-                    items: vec![
-                        MenuItem::os_action("Undo", Undo, OsAction::Undo),
-                        MenuItem::os_action("Redo", Redo, OsAction::Redo),
-                        MenuItem::separator(),
-                        MenuItem::os_action("Cut", Cut, OsAction::Cut),
-                        MenuItem::os_action("Copy", Copy, OsAction::Copy),
-                        MenuItem::os_action("Paste", Paste, OsAction::Paste),
-                        MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
-                    ],
-                },
-                Menu {
-                    name: "View".into(),
-                    disabled: false,
-                    items: vec![
-                        MenuItem::action("Command Palette…", TogglePalette),
-                        MenuItem::separator(),
-                        MenuItem::action("Toggle Light / Dark", ToggleTheme),
-                    ],
-                },
-            ]);
-
-            // 6. Open the window. `TitleBar::title_bar_options()` makes the title
-            //    bar transparent + insets the traffic lights so `Shell`'s custom
-            //    `TitleBar` element draws edge-to-edge underneath.
-            let bounds = Bounds::centered(None, size(px(880.0), px(620.0)), cx);
-            let options = WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitleBar::title_bar_options()),
-                window_min_size: Some(size(px(640.0), px(520.0))),
-                ..Default::default()
-            };
-
-            let main_window = cx
-                .open_window(options, move |window, cx| {
-                    let view = cx.new(|cx| Shell::new(settings, window, cx));
-                    cx.new(|cx| Root::new(view, window, cx))
-                })
-                .expect("failed to open window");
-
-            // Optional: native menu-bar tray icon + dock hiding (`--features tray`).
-            // The tray icon uses the saved accent and restyles live when changed.
-            #[cfg(feature = "tray")]
-            tray::install(cx, accent);
-
-            // Optional: floating overlay surface (`--features overlay`). Threads the
-            // main window handle so closing it tears the overlay down too. Must NOT
-            // call cx.activate (that would re-activate Deck and steal focus).
-            #[cfg(feature = "overlay")]
-            overlay::install(cx, &overlay_settings, main_window);
-            #[cfg(not(feature = "overlay"))]
-            let _ = main_window;
-
-            cx.activate(true);
-        });
+fn main() -> ExitCode {
+    let (mut help, mut version) = (false, false);
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-h" | "--help" => help = true,
+            "-V" | "--version" => version = true,
+            // Launch Services may append a process serial number (`-psn_0_12345`).
+            psn if cfg!(target_os = "macos") && psn.starts_with("-psn_") => {}
+            other => {
+                let bin = env!("CARGO_BIN_NAME");
+                eprintln!("{bin}: unknown argument {other:?}\n\n{USAGE}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if help {
+        println!("{USAGE}");
+        return ExitCode::SUCCESS;
+    }
+    if version {
+        println!("{} {}", env!("CARGO_BIN_NAME"), env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
+    match {{crate_name}}::Launch::from_env() {
+        Ok(launch) => {
+            {{crate_name}}::run(launch);
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{}: {err}", env!("CARGO_BIN_NAME"));
+            ExitCode::from(2)
+        }
+    }
 }

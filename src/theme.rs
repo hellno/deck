@@ -1,211 +1,209 @@
-//! Theme — a refined dark/light palette with a selectable brand accent.
-//!
-//! gpui-component's stock dark theme is near pure-black-on-white, which reads
-//! harsh. The common pattern (Linear, GitHub, Zed) is: a *soft* near-black with
-//! slightly-elevated surfaces, muted secondary text, and a single saturated
-//! **accent** that carries the brand. We build that by cloning the built-in
-//! `ThemeConfig` and overriding ~20 color tokens, so it survives light/dark
-//! toggles (gpui-component re-applies the config on every `Theme::change`).
+//! A macOS look: 13 px type, neutral greys, one accent. Root derives rem from the theme's font
+//! size (gpui-component defaults to 16 px), so the base size scales controls as well as text.
 
 use std::rc::Rc;
 
-use gpui::{App, SharedString};
-use gpui_component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry};
+use gpui_kit::{
+    App, SharedString, Window,
+    component::{Theme, ThemeConfig, ThemeMode, ThemeRegistry},
+};
 use serde::{Deserialize, Serialize};
 
-/// The brand accent. This is the knob that makes the app feel like *yours* — the
-/// settings page lets the user pick one and it re-themes the whole app live.
+pub const FONT_SIZE: f32 = 13.0;
+
+/// The one accent: primary buttons, focus rings, switches, links. Dark enough for white
+/// text at AA contrast (macOS's #007AFF is only 4.0:1).
+const ACCENT: [&str; 3] = ["#0064E1", "#0058C6", "#004CAB"]; // base, hover, active
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub enum Accent {
+pub enum Appearance {
     #[default]
-    Indigo,
-    Blue,
-    Violet,
-    Emerald,
-    Amber,
-    Rose,
+    System,
+    Light,
+    Dark,
 }
 
-impl Accent {
-    pub const ALL: [Accent; 6] = [
-        Accent::Indigo,
-        Accent::Blue,
-        Accent::Violet,
-        Accent::Emerald,
-        Accent::Amber,
-        Accent::Rose,
-    ];
+impl Appearance {
+    pub const ALL: [Appearance; 3] = [Appearance::System, Appearance::Light, Appearance::Dark];
 
     pub fn label(self) -> &'static str {
         match self {
-            Accent::Indigo => "Indigo",
-            Accent::Blue => "Blue",
-            Accent::Violet => "Violet",
-            Accent::Emerald => "Emerald",
-            Accent::Amber => "Amber",
-            Accent::Rose => "Rose",
+            Appearance::System => "System",
+            Appearance::Light => "Light",
+            Appearance::Dark => "Dark",
         }
     }
 
-    /// `(base, hover, active)` hex for the accent. `base` is also the swatch color.
-    fn ramp(self) -> (&'static str, &'static str, &'static str) {
-        match self {
-            Accent::Indigo => ("#4F46E5", "#4338CA", "#3730A3"),
-            Accent::Blue => ("#2563EB", "#1D4ED8", "#1E40AF"),
-            Accent::Violet => ("#7C3AED", "#6D28D9", "#5B21B6"),
-            Accent::Emerald => ("#047857", "#065F46", "#064E3B"),
-            Accent::Amber => ("#B45309", "#92400E", "#78350F"),
-            Accent::Rose => ("#E11D48", "#BE123C", "#9F1239"),
-        }
-    }
-
-    /// The swatch / mark color as an `0xRRGGBB` value, for `gpui::rgb(..)` in the UI.
-    pub fn rgb(self) -> u32 {
-        match self {
-            Accent::Indigo => 0x4F46E5,
-            Accent::Blue => 0x2563EB,
-            Accent::Violet => 0x7C3AED,
-            Accent::Emerald => 0x047857,
-            Accent::Amber => 0xB45309,
-            Accent::Rose => 0xE11D48,
-        }
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|appearance| appearance.label().eq_ignore_ascii_case(name))
     }
 }
 
-/// Install (or re-install) the refined theme for `accent`, then apply `mode`.
-/// Call once at startup and again whenever the user changes accent or mode.
-pub fn install(cx: &mut App, accent: Accent, mode: ThemeMode) {
-    // Ensure the Theme global exists (first call seeds it from the registry).
-    Theme::change(mode, None, cx);
+struct Palette {
+    window: &'static str,
+    /// Grouped-content surface (`GroupBox`), popovers.
+    surface: &'static str,
+    text: &'static str,
+    secondary_text: &'static str,
+    separator: &'static str,
+    /// Secondary buttons and hover fills: base, hover, active.
+    control: [&'static str; 3],
+    /// Input and switch-off borders/fills.
+    control_border: &'static str,
+    /// Track behind `TabBar::segmented`. Its selected segment is drawn in `window`, so the
+    /// track must contrast with the window colour: lighter-than-window in dark mode reads as
+    /// a hole, so dark uses a darker track.
+    segmented_track: &'static str,
+    /// Unselected segment labels, drawn on `segmented_track`.
+    tab_text: &'static str,
+    /// Links, drawn on `window` and `surface`.
+    link: &'static str,
+}
 
+const LIGHT: Palette = Palette {
+    window: "#F5F5F5",
+    surface: "#FFFFFF",
+    text: "#1D1D1F",
+    secondary_text: "#6E6E73",
+    separator: "#E2E2E4",
+    control: ["#E8E8EA", "#DDDDE0", "#D2D2D5"],
+    control_border: "#D1D1D6",
+    segmented_track: "#E3E3E6",
+    tab_text: "#5C5C61",
+    link: "#0064E1",
+};
+
+const DARK: Palette = Palette {
+    window: "#1E1E1E",
+    surface: "#2A2A2A",
+    text: "#E8E8EA",
+    secondary_text: "#98989D",
+    separator: "#3A3A3C",
+    control: ["#3A3A3C", "#454547", "#505052"],
+    control_border: "#4A4A4C",
+    segmented_track: "#121212",
+    tab_text: "#98989D",
+    link: "#4C9EFF",
+};
+
+/// Call once, after `gpui_kit::init`.
+pub fn install(cx: &mut App) {
     let registry = ThemeRegistry::global(cx);
-    let mut dark = (**registry.default_dark_theme()).clone();
     let mut light = (**registry.default_light_theme()).clone();
-    refine(&mut dark, accent, true);
-    refine(&mut light, accent, false);
-
+    let mut dark = (**registry.default_dark_theme()).clone();
+    refine(&mut light, &LIGHT);
+    refine(&mut dark, &DARK);
     let theme = Theme::global_mut(cx);
-    theme.dark_theme = Rc::new(dark);
     theme.light_theme = Rc::new(light);
-
-    // Re-apply so the (possibly already-open) windows pick up the new config.
-    Theme::change(mode, None, cx);
-    cx.refresh_windows();
+    theme.dark_theme = Rc::new(dark);
 }
 
-fn refine(config: &mut ThemeConfig, accent: Accent, dark: bool) {
-    let (primary, primary_hover, primary_active) = accent.ramp();
+/// `System` reads the window's current OS appearance; call again when that changes.
+pub fn apply(appearance: Appearance, window: &mut Window, cx: &mut App) {
+    match appearance {
+        Appearance::System => Theme::sync_system_appearance(Some(window), cx),
+        Appearance::Light => Theme::change(ThemeMode::Light, Some(window), cx),
+        Appearance::Dark => Theme::change(ThemeMode::Dark, Some(window), cx),
+    }
+}
+
+fn refine(config: &mut ThemeConfig, p: &Palette) {
+    config.font_size = Some(FONT_SIZE);
     let c = &mut config.colors;
     let set = |slot: &mut Option<SharedString>, hex: &str| *slot = Some(hex.to_string().into());
 
-    // Brand accent (shared across modes). `primary` is the brand color; the
-    // `accent` token is a *subtle surface* (ghost-button / menu hover), not the brand.
-    set(&mut c.primary, primary);
-    set(&mut c.primary_hover, primary_hover);
-    set(&mut c.primary_active, primary_active);
-    set(&mut c.primary_foreground, "#FFFFFF");
-    set(&mut c.ring, primary);
+    set(&mut c.background, p.window);
+    set(&mut c.foreground, p.text);
+    set(&mut c.muted_foreground, p.secondary_text);
+    set(&mut c.border, p.separator);
+    set(&mut c.title_bar, p.window);
+    set(&mut c.title_bar_border, p.separator);
+    set(&mut c.group_box, p.surface);
+    set(&mut c.group_box_foreground, p.text);
+    set(&mut c.group_box_title_foreground, p.secondary_text);
+    set(&mut c.popover, p.surface);
+    set(&mut c.popover_foreground, p.text);
 
-    if dark {
-        set(&mut c.background, "#0C0D11"); // soft near-black, faint blue cast
-        set(&mut c.foreground, "#E6E7EB"); // soft white, not #FFF
-        set(&mut c.secondary, "#16171D"); // cards / surfaces
-        set(&mut c.secondary_foreground, "#E6E7EB");
-        set(&mut c.muted, "#1B1C23");
-        set(&mut c.muted_foreground, "#8A8C99"); // secondary text
-        set(&mut c.border, "#262833");
-        set(&mut c.input, "#1B1C23");
-        set(&mut c.popover, "#16171D");
-        set(&mut c.popover_foreground, "#E6E7EB");
-        set(&mut c.title_bar, "#0C0D11");
-        set(&mut c.title_bar_border, "#1B1C23");
-        set(&mut c.sidebar, "#0F1014");
-        set(&mut c.accent, "#1F2029"); // subtle hover surface
-        set(&mut c.accent_foreground, "#E6E7EB");
-    } else {
-        set(&mut c.background, "#FBFBFC");
-        set(&mut c.foreground, "#16171D");
-        set(&mut c.secondary, "#F1F2F4");
-        set(&mut c.secondary_foreground, "#16171D");
-        set(&mut c.muted, "#F1F2F4");
-        set(&mut c.muted_foreground, "#6B6D78");
-        set(&mut c.border, "#E4E5EA");
-        set(&mut c.input, "#FFFFFF");
-        set(&mut c.popover, "#FFFFFF");
-        set(&mut c.popover_foreground, "#16171D");
-        set(&mut c.title_bar, "#FBFBFC");
-        set(&mut c.title_bar_border, "#E4E5EA");
-        set(&mut c.sidebar, "#F6F7F9");
-        set(&mut c.accent, "#F1F2F4");
-        set(&mut c.accent_foreground, "#16171D");
-    }
+    set(&mut c.secondary, p.control[0]);
+    set(&mut c.secondary_hover, p.control[1]);
+    set(&mut c.secondary_active, p.control[2]);
+    set(&mut c.secondary_foreground, p.text);
+    set(&mut c.muted, p.control[0]);
+    set(&mut c.accent, p.control[0]); // gpui-component's "accent" is a hover fill, not the brand
+    set(&mut c.accent_foreground, p.text);
+    set(&mut c.list_hover, p.control[0]);
+    set(&mut c.input, p.control_border);
+
+    set(&mut c.tab_bar_segmented, p.segmented_track);
+    set(&mut c.tab_foreground, p.tab_text);
+    set(&mut c.tab_active_foreground, p.text);
+    set(&mut c.switch, p.control_border);
+    set(&mut c.switch_thumb, "#FFFFFF");
+
+    set(&mut c.primary, ACCENT[0]);
+    set(&mut c.primary_hover, ACCENT[1]);
+    set(&mut c.primary_active, ACCENT[2]);
+    set(&mut c.primary_foreground, "#FFFFFF");
+    set(&mut c.ring, ACCENT[0]);
+    set(&mut c.link, p.link);
 }
 
 #[cfg(test)]
 mod tests {
-    use gpui_component::ThemeConfig;
+    use super::{ACCENT, DARK, LIGHT, Palette};
 
-    use super::{refine, Accent};
-
-    fn contrast_with_white(hex: &str) -> f64 {
-        let value = u32::from_str_radix(hex.trim_start_matches('#'), 16)
-            .expect("theme ramps contain valid six-digit hex colors");
-        let channel = |shift| {
-            let value = f64::from(((value >> shift) & 0xff_u32) as u8) / 255.0;
-            if value <= 0.04045 {
-                value / 12.92
-            } else {
-                ((value + 0.055) / 1.055).powf(2.4)
-            }
+    /// WCAG 2 contrast ratio between two `#RRGGBB` colours.
+    fn contrast(a: &str, b: &str) -> f64 {
+        let luminance = |hex: &str| {
+            let rgb = u32::from_str_radix(hex.trim_start_matches('#'), 16)
+                .expect("palette colours are #RRGGBB");
+            let channel = |shift: u32| {
+                let c = f64::from((rgb >> shift) & 0xFF) / 255.0;
+                if c <= 0.04045 {
+                    c / 12.92
+                } else {
+                    ((c + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
         };
-        let luminance = 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0);
-        1.05 / (luminance + 0.05)
+        let (la, lb) = (luminance(a), luminance(b));
+        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+    }
+
+    fn assert_aa(text: &str, background: &str, what: &str) {
+        let ratio = contrast(text, background);
+        assert!(
+            ratio >= 4.5,
+            "{what}: {text} on {background} is {ratio:.2}:1"
+        );
     }
 
     #[test]
-    fn every_primary_state_meets_aa_contrast_with_white_text() {
-        for accent in Accent::ALL {
-            for hex in [accent.ramp().0, accent.ramp().1, accent.ramp().2] {
-                let contrast = contrast_with_white(hex);
-                assert!(
-                    contrast >= 4.5,
-                    "{} {hex} has only {contrast:.2}:1 contrast",
-                    accent.label()
-                );
+    fn text_meets_aa_contrast_in_both_modes() {
+        for (mode, p) in [("light", &LIGHT), ("dark", &DARK)] {
+            let p: &Palette = p;
+            let pairs = [
+                ("text", p.text, p.window),
+                ("text", p.text, p.surface),
+                ("secondary text", p.secondary_text, p.window),
+                ("secondary text", p.secondary_text, p.surface),
+                ("unselected tab", p.tab_text, p.segmented_track),
+                ("link", p.link, p.window),
+                ("link", p.link, p.surface),
+            ];
+            for (what, text, background) in pairs {
+                assert_aa(text, background, &format!("{mode} {what}"));
             }
         }
     }
 
     #[test]
-    fn swatch_rgb_matches_the_primary_ramp_color() {
-        for accent in Accent::ALL {
-            let ramp_rgb = u32::from_str_radix(accent.ramp().0.trim_start_matches('#'), 16)
-                .expect("theme ramps contain valid six-digit hex colors");
-            assert_eq!(accent.rgb(), ramp_rgb, "{} swatch drifted", accent.label());
-        }
-    }
-
-    #[test]
-    fn refine_applies_accessible_brand_tokens_in_both_modes() {
-        for dark in [false, true] {
-            for accent in Accent::ALL {
-                let mut config = ThemeConfig::default();
-                refine(&mut config, accent, dark);
-
-                assert_eq!(config.colors.primary.as_deref(), Some(accent.ramp().0));
-                assert_eq!(
-                    config.colors.primary_hover.as_deref(),
-                    Some(accent.ramp().1)
-                );
-                assert_eq!(
-                    config.colors.primary_active.as_deref(),
-                    Some(accent.ramp().2)
-                );
-                assert_eq!(config.colors.primary_foreground.as_deref(), Some("#FFFFFF"));
-                assert_eq!(config.colors.ring.as_deref(), Some(accent.ramp().0));
-                assert!(config.colors.background.is_some());
-                assert!(config.colors.foreground.is_some());
-            }
+    fn white_text_meets_aa_contrast_on_every_accent_state() {
+        for hex in ACCENT {
+            assert_aa("#FFFFFF", hex, "accent");
         }
     }
 }

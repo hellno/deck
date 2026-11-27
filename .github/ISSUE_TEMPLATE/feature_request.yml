@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Deck is kept deliberately small (~700 lines). The best additions make it
+        Deck is kept deliberately small. The best additions make it
         a better foundation for everyone who forks it — not your app's domain
         logic. When in doubt, open this first before a PR.
   - type: textarea

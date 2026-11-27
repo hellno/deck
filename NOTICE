@@ -1,38 +1,29 @@
-{{project-name | title_case}} — third-party attributions
-====================================
+{{app_name}}: third-party attributions
+=====================================
 
-This project is 0BSD licensed (see LICENSE) — you may use it with no attribution required. It bundles or depends on the
-following third-party work, each under its own permissive license.
+This project is 0BSD licensed (see LICENSE): no attribution required. It bundles or
+depends on the following third-party work, each under its own permissive license.
 
 Lucide icons
 ------------
-The icon set exposed via gpui-component's `IconName` (and bundled as SVGs by
-`gpui-component-assets`) is Lucide. Lucide is licensed under the ISC License.
+The icon set behind gpui-component's `IconName`, bundled as SVGs by `gpui-kit-assets`,
+is Lucide: ISC License, with the icons derived from Feather under MIT. The full text,
+copied from gpui-kit-assets, is in LICENSE-LUCIDE.
 
-    Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as
-    part of Feather (MIT). All other copyright (c) for Lucide are held by the
-    Lucide Contributors 2022.
+GPUI and GPUI Kit
+-----------------
+From crates.io, all Apache-2.0:
 
-    Permission to use, copy, modify, and/or distribute this software for any
-    purpose with or without fee is hereby granted, provided that the above
-    copyright notice and this permission notice appear in all copies.
+- gpui-kit, gpui-base, gpui-component, gpui-kit-assets: © Longbridge
+  (https://github.com/longbridge/gpui-kit).
+- gpui-pre and its gpui-pre-* crates: published snapshots of Zed's GPUI,
+  © Zed Industries (https://github.com/zed-industries/zed).
 
-ISC is a permissive, MIT-equivalent license — free for personal and commercial
-use. Keep this notice if you redistribute the bundled icons. https://lucide.dev
-
-GPUI and gpui-component
------------------------
-The framework crates are pulled from git (pinned in Cargo.lock), not crates.io,
-and are all Apache-2.0:
-
-- gpui, gpui_platform, sum_tree, zlog, ztracing, ztracing_macro — from Zed
-  (https://github.com/zed-industries/zed, pinned at commit 8514ce3b).
-  Apache-2.0, © Zed Industries.
-- gpui-component, gpui-component-assets — from
-  https://github.com/longbridge/gpui-component (pinned at commit 0c746dff).
-  Apache-2.0, © Longbridge.
+The Apache License 2.0 text is in LICENSE-APACHE.
 
 tray-icon (optional, `--features tray`)
 ---------------------------------------
-- tray-icon, muda, objc2, objc2-app-kit — MIT/Apache-2.0 (Tauri / objc2
-  contributors).
+- tray-icon, muda (Tauri contributors), and gtk-rs on Linux: MIT/Apache-2.0 or MIT.
+
+This file covers the main components. For a complete per-crate attribution list (every
+MIT/Apache/ISC dependency), generate one with `cargo about` or `cargo deny list`.

@@ -1,213 +1,184 @@
-//! Shell — the single root view. Owns the persisted `Settings`, the current
-//! route (Welcome vs Settings), and a stateful text input. It renders the title
-//! bar plus whichever page is active. The page bodies live in `welcome.rs` and
-//! `settings_view.rs` as `impl Shell` methods (Rust lets you split an inherent
-//! impl across modules), so this file stays focused on state + navigation.
+//! The main window's root view: page state, settings and the title bar.
 
-use std::collections::VecDeque;
-
-use gpui::{
-    div, App, AppContext, Context, Entity, FocusHandle, Focusable, FontWeight, InteractiveElement,
-    IntoElement, ParentElement, PromptLevel, Render, Styled, Subscription, Window,
-};
-use gpui_component::{
-    button::{Button, ButtonVariants},
-    h_flex,
-    input::{InputEvent, InputState},
-    list::ListState,
-    v_flex, ActiveTheme, IconName, TitleBar,
+use gpui_kit::{
+    App, Context, Entity, FocusHandle, Focusable, MouseButton, PromptLevel, SharedString,
+    Subscription, Window,
+    component::{
+        ActiveTheme as _, IndexPath, Sizable as _, TitleBar,
+        select::{SelectEvent, SelectState},
+        tab::{Tab, TabBar},
+        v_flex,
+    },
+    div,
+    prelude::*,
+    px,
 };
 
-use crate::command_palette::PaletteDelegate;
-use crate::settings::{Settings, ThemeModePref};
-use crate::theme::{self, Accent};
-use crate::{About, GoBack, NewItem, OpenSettings, ToggleTheme, APP_NAME};
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Route {
-    Welcome,
-    Settings,
-}
+use crate::{
+    APP_NAME, About, CloseWindow, Launch, NewItem, OpenSettings, Page, SetAppearance, ShowHome,
+    home,
+    palette::Palette,
+    settings::{Settings, SettingsFile},
+    theme::{self, Appearance},
+};
 
 pub struct Shell {
-    pub focus_handle: FocusHandle,
-    pub route: Route,
-    pub settings: Settings,
-    pub name_input: Entity<InputState>,
-    pub created: usize,
-    /// The command palette's list, while it's open (rebuilt fresh each open so the
-    /// query always starts empty). `None` = closed. See `command_palette.rs`.
-    pub palette: Option<Entity<ListState<PaletteDelegate>>>,
-    /// Keeps the palette's event subscription alive while it's open.
-    pub palette_sub: Option<Subscription>,
-    /// Recently-run command ids, most-recent first — the palette's "Recent" group.
-    pub recents: VecDeque<&'static str>,
+    focus_handle: FocusHandle,
+    pub(crate) page: Page,
+    pub(crate) settings: Settings,
+    pub(crate) file: SettingsFile,
+    /// A one-off appearance for this run (`APP_APPEARANCE`); not saved.
+    appearance_override: Option<Appearance>,
+    pub(crate) settings_problem: Option<SharedString>,
+    pub(crate) dry_run: bool,
+    pub(crate) items: Vec<SharedString>,
+    #[cfg(target_os = "macos")]
+    pub(crate) login_item: crate::login_item::LoginItem,
+    pub(crate) appearance_select: Entity<SelectState<Vec<&'static str>>>,
+    pub(crate) palette: Option<Palette>,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl Shell {
-    pub fn new(settings: Settings, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        launch: &Launch,
+        mut file: SettingsFile,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle, cx);
 
-        let name_input = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("Your name")
-                .default_value(settings.display_name.clone())
+        let loaded = file.load();
+        let settings = loaded.settings;
+        let appearance = launch.appearance.unwrap_or(settings.appearance);
+        theme::apply(appearance, window, cx);
+
+        let selected = Appearance::ALL.iter().position(|a| *a == appearance);
+        let appearance_select = cx.new(|cx| {
+            SelectState::new(
+                Appearance::ALL.map(Appearance::label).to_vec(),
+                selected.map(IndexPath::new),
+                window,
+                cx,
+            )
         });
 
-        // Mirror the field into memory on every keystroke (cheap, no I/O) so the
-        // Welcome greeting stays live — but only touch the disk on blur, off the
-        // per-keystroke hot path. `save` is cheap today, but this is the rule an
-        // agent fork (streaming tokens through this same view) must inherit. §17.
-        cx.subscribe(&name_input, |this, state, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::Change | InputEvent::Blur) {
-                this.settings.display_name = state.read(cx).value().to_string();
-            }
-            if matches!(event, InputEvent::Blur) {
-                this.settings.save_best_effort();
-            }
-        })
-        .detach();
+        let subscriptions = vec![
+            cx.subscribe_in(
+                &appearance_select,
+                window,
+                |this, _, event: &SelectEvent<Vec<&'static str>>, window, cx| {
+                    let SelectEvent::Confirm(Some(label)) = event else {
+                        return;
+                    };
+                    if let Some(appearance) = Appearance::parse(label) {
+                        this.set_appearance(appearance, window, cx);
+                    }
+                },
+            ),
+            cx.observe_window_appearance(window, |this, window, cx| {
+                if this.appearance() == Appearance::System {
+                    theme::apply(Appearance::System, window, cx);
+                }
+            }),
+        ];
 
         Self {
             focus_handle,
-            route: Route::Welcome,
+            page: launch.page,
             settings,
-            name_input,
-            created: 0,
+            file,
+            appearance_override: launch.appearance,
+            settings_problem: loaded.problem.map(Into::into),
+            dry_run: launch.dry_run,
+            items: if launch.fixtures {
+                home::sample_items()
+            } else {
+                Vec::new()
+            },
+            #[cfg(target_os = "macos")]
+            login_item: crate::login_item::LoginItem::detect(launch.dry_run),
+            appearance_select,
             palette: None,
-            palette_sub: None,
-            recents: VecDeque::new(),
+            _subscriptions: subscriptions,
         }
     }
 
-    pub fn navigate(&mut self, route: Route, cx: &mut Context<Self>) {
-        self.route = route;
+    pub fn appearance(&self) -> Appearance {
+        self.appearance_override.unwrap_or(self.settings.appearance)
+    }
+
+    pub fn navigate(&mut self, page: Page, cx: &mut Context<Self>) {
+        self.page = page;
         cx.notify();
     }
 
-    /// Re-install the theme from the current settings (accent + mode).
-    fn apply_theme(&self, cx: &mut Context<Self>) {
-        theme::install(cx, self.settings.accent, self.settings.theme_mode.to_gpui());
-    }
-
-    pub fn set_accent(&mut self, accent: Accent, cx: &mut Context<Self>) {
-        self.settings.accent = accent;
-        self.settings.save_best_effort();
-        self.apply_theme(cx);
-        // Keep the menu-bar tray icon (if running) in sync with the accent.
-        #[cfg(feature = "tray")]
-        crate::tray::set_accent(cx, accent);
+    pub(crate) fn set_appearance(
+        &mut self,
+        appearance: Appearance,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.appearance_override = None;
+        self.settings.appearance = appearance;
+        self.file.save_best_effort(&self.settings);
+        theme::apply(appearance, window, cx);
+        self.appearance_select.update(cx, |select, cx| {
+            select.set_selected_value(&appearance.label(), window, cx);
+        });
         cx.notify();
-    }
-
-    pub fn set_mode(&mut self, mode: ThemeModePref, cx: &mut Context<Self>) {
-        self.settings.theme_mode = mode;
-        self.settings.save_best_effort();
-        self.apply_theme(cx);
-        cx.notify();
-    }
-
-    pub fn toggle_mode(&mut self, cx: &mut Context<Self>) {
-        let next = match self.settings.theme_mode {
-            ThemeModePref::Dark => ThemeModePref::Light,
-            ThemeModePref::Light => ThemeModePref::Dark,
-        };
-        self.set_mode(next, cx);
-    }
-
-    // --- Action handlers (wired in `render`) ---
-
-    fn on_new_item(&mut self, _: &NewItem, _: &mut Window, cx: &mut Context<Self>) {
-        self.created += 1;
-        cx.notify();
-    }
-
-    fn on_open_settings(&mut self, _: &OpenSettings, _: &mut Window, cx: &mut Context<Self>) {
-        self.navigate(Route::Settings, cx);
-    }
-
-    fn on_go_back(&mut self, _: &GoBack, _: &mut Window, cx: &mut Context<Self>) {
-        if self.route != Route::Welcome {
-            self.navigate(Route::Welcome, cx);
-        }
-    }
-
-    fn on_toggle_theme(&mut self, _: &ToggleTheme, _: &mut Window, cx: &mut Context<Self>) {
-        self.toggle_mode(cx);
     }
 
     fn on_about(&mut self, _: &About, window: &mut Window, cx: &mut Context<Self>) {
         drop(window.prompt(
             PromptLevel::Info,
             APP_NAME,
-            Some("A native desktop app built with GPUI and gpui-component."),
+            Some(concat!("Version ", env!("CARGO_PKG_VERSION"))),
             &["OK"],
             cx,
         ));
     }
 
     fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let muted = cx.theme().muted_foreground;
-        let is_settings = self.route == Route::Settings;
-        let theme_icon = if self.settings.theme_mode == ThemeModePref::Dark {
-            IconName::Sun
-        } else {
-            IconName::Moon
-        };
+        let selected = Page::ALL.iter().position(|p| *p == self.page).unwrap_or(0);
+        let tabs = TabBar::new("pages")
+            .segmented()
+            .small()
+            .selected_index(selected)
+            .on_click(cx.listener(|this, index: &usize, _, cx| {
+                if let Some(page) = Page::ALL.get(*index) {
+                    this.navigate(*page, cx);
+                }
+            }))
+            .children(Page::ALL.map(|page| Tab::new().label(page.label())));
 
         TitleBar::new().child(
-            h_flex()
-                .w_full()
+            div()
+                .relative()
+                .size_full()
+                .flex()
                 .items_center()
-                .justify_between()
+                .justify_center()
+                // Centre on the window, not on the space right of the traffic lights.
+                .when(cfg!(target_os = "macos"), |this| this.mr(px(80.0)))
                 .child(
-                    h_flex()
-                        .items_center()
-                        .gap_2()
-                        .children(is_settings.then(|| {
-                            Button::new("back")
-                                .ghost()
-                                .icon(IconName::ChevronLeft)
-                                .accessibility_label("Back to welcome")
-                                .tooltip("Back")
-                                .on_click(
-                                    cx.listener(|this, _, _, cx| this.navigate(Route::Welcome, cx)),
-                                )
-                        }))
-                        .child(
-                            div()
-                                .text_sm()
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(muted)
-                                .child(if is_settings { "Settings" } else { APP_NAME }),
-                        ),
+                    // The title bar drags the window on mouse down unless a child prevents
+                    // it, and the tabs don't. Without this, clicking a tab moves the window.
+                    div()
+                        .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                        .child(tabs),
                 )
-                .child(
-                    h_flex()
-                        .items_center()
-                        .gap_1()
-                        .children((!is_settings).then(|| {
-                            Button::new("open-settings")
-                                .ghost()
-                                .icon(IconName::Settings)
-                                .accessibility_label("Open settings")
-                                .tooltip("Settings")
-                                .on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        this.navigate(Route::Settings, cx)
-                                    }),
-                                )
-                        }))
-                        .child(
-                            Button::new("toggle-theme")
-                                .ghost()
-                                .icon(theme_icon)
-                                .accessibility_label("Toggle light or dark theme")
-                                .tooltip("Toggle theme")
-                                .on_click(cx.listener(|this, _, _, cx| this.toggle_mode(cx))),
-                        ),
-                ),
+                .when(self.dry_run, |this| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .right_3()
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child("Dry run"),
+                    )
+                }),
         )
     }
 }
@@ -219,32 +190,113 @@ impl Focusable for Shell {
 }
 
 impl Render for Shell {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let background = cx.theme().background;
-        let title_bar = self.render_title_bar(cx);
-        let content = match self.route {
-            Route::Welcome => self.render_welcome(cx).into_any_element(),
-            Route::Settings => self.render_settings(window, cx).into_any_element(),
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let page = match self.page {
+            Page::Home => self.render_home(cx).into_any_element(),
+            Page::Settings => self.render_settings(cx).into_any_element(),
         };
-        // The command palette overlay (when open), painted over everything else.
         let palette = self
             .palette
-            .clone()
-            .map(|p| self.render_palette(&p, cx).into_any_element());
-
+            .as_ref()
+            .map(|palette| self.render_palette(palette, cx));
         v_flex()
-            .size_full()
             .relative()
-            .bg(background)
+            .size_full()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
             .track_focus(&self.focus_handle)
-            .on_action(cx.listener(Self::on_new_item))
+            .on_action(cx.listener(|this, _: &NewItem, window, cx| this.new_item(window, cx)))
+            .on_action(cx.listener(|this, _: &ShowHome, _, cx| this.navigate(Page::Home, cx)))
+            .on_action(
+                cx.listener(|this, _: &OpenSettings, _, cx| this.navigate(Page::Settings, cx)),
+            )
+            .on_action(cx.listener(|_, _: &CloseWindow, window, _| window.remove_window()))
             .on_action(cx.listener(Self::on_about))
-            .on_action(cx.listener(Self::on_open_settings))
-            .on_action(cx.listener(Self::on_go_back))
-            .on_action(cx.listener(Self::on_toggle_theme))
-            .on_action(cx.listener(Self::on_palette_toggle))
-            .child(title_bar)
-            .child(content)
+            .on_action(cx.listener(
+                |this, SetAppearance(appearance): &SetAppearance, window, cx| {
+                    this.set_appearance(*appearance, window, cx);
+                },
+            ))
+            .on_action(cx.listener(Self::toggle_palette))
+            .child(self.render_title_bar(cx))
+            .child(page)
             .children(palette)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::{
+        AnyWindowHandle, App, AppContext as _, Entity, SharedString, TestAppContext, Window,
+        test::TestWindowExt as _,
+    };
+
+    use super::Shell;
+    use crate::{Launch, Page, settings::SettingsFile};
+
+    const PALETTE: &str = if cfg!(target_os = "macos") {
+        "cmd-k"
+    } else {
+        "ctrl-k"
+    };
+    const NEW_ITEM: &str = if cfg!(target_os = "macos") {
+        "cmd-n"
+    } else {
+        "ctrl-n"
+    };
+
+    fn open(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<Shell>) {
+        cx.update(crate::init);
+        cx.update(|cx| {
+            gpui_kit::open_window(Default::default(), cx, |window, cx| {
+                cx.new(|cx| Shell::new(&Launch::default(), SettingsFile::none(), window, cx))
+            })
+        })
+        .expect("open a window")
+    }
+
+    fn step(
+        cx: &mut TestAppContext,
+        window: AnyWindowHandle,
+        act: impl FnOnce(&mut Window, &mut App),
+    ) {
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            act(window, cx);
+        })
+        .expect("window is open");
+        cx.run_until_parked();
+    }
+
+    #[gpui_kit::test]
+    fn a_palette_command_runs_and_closes_the_palette(cx: &mut TestAppContext) {
+        let (window, shell) = open(cx);
+        step(cx, window, |window, cx| window.press(PALETTE, cx));
+        step(cx, window, |window, cx| window.input("settings", cx));
+        step(cx, window, |window, cx| window.press("enter", cx));
+        shell.read_with(cx, |shell, _| {
+            assert_eq!(shell.page, Page::Settings);
+            assert!(shell.palette.is_none());
+        });
+    }
+
+    #[gpui_kit::test]
+    fn the_palette_keeps_focus_until_escape(cx: &mut TestAppContext) {
+        let (window, shell) = open(cx);
+        step(cx, window, |window, cx| window.press(PALETTE, cx));
+        step(cx, window, |window, cx| window.press("tab", cx));
+        step(cx, window, |window, cx| window.press("escape", cx));
+        shell.read_with(cx, |shell, _| assert!(shell.palette.is_none()));
+    }
+
+    #[gpui_kit::test]
+    fn new_item_takes_typing_right_away(cx: &mut TestAppContext) {
+        let (window, shell) = open(cx);
+        step(cx, window, |window, cx| window.press(NEW_ITEM, cx));
+        step(cx, window, |window, cx| window.input("Milk", cx));
+        step(cx, window, |window, cx| window.press("enter", cx));
+        shell.read_with(cx, |shell, _| {
+            assert_eq!(shell.items, [SharedString::from("Milk")]);
+        });
     }
 }

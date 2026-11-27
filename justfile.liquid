@@ -1,69 +1,78 @@
 {% raw %}
-# Generated-app task runner. Install with `cargo install just` or your package manager.
-
 default:
     @just --list
 
 run:
     cargo run
 
-run-release:
-    cargo run --release
-
+# Run as a menu-bar / tray app.
 run-tray:
     cargo run --features tray
 
-run-overlay:
-    cargo run --features overlay
+# Run with separate settings and without taking focus (APP_DRY_RUN).
+dry-run:
+    APP_DRY_RUN=1 cargo run
 
-screenshot out="docs/screenshot.png" features="" keys="":
-    bash scripts/screenshot.sh "{{out}}" "{{features}}" "{{keys}}"
+# Headless screenshot, no window: `just shot settings dark /tmp/settings.png`.
+shot page appearance out:
+    cargo run --quiet --example shot -- {{quote(page)}} {{quote(appearance)}} {{quote(out)}}
 
 fmt:
     cargo fmt
 
-check:
-    cargo clippy --locked --all-targets -- -D warnings
-    cargo clippy --locked --all-targets --features tray -- -D warnings
-    cargo clippy --locked --all-targets --features overlay -- -D warnings
-    cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
-
+# Format, lint and build both feature sets, and test. CI runs this, plus cargo-deny.
 ci:
     cargo fmt --all --check
     cargo clippy --locked --all-targets -- -D warnings
-    cargo clippy --locked --all-targets --features tray -- -D warnings
-    cargo clippy --locked --all-targets --features overlay -- -D warnings
-    cargo clippy --locked --all-targets --features tray,overlay -- -D warnings
-    cargo test --locked
-    cargo test --locked --features overlay
+    cargo clippy --locked --all-targets --all-features -- -D warnings
+    cargo test --locked --all-features
+    cargo build --locked --all-features
+    cargo build --locked
 
+# Apply clippy's fixes and format.
 fix:
-    cargo clippy --fix --allow-dirty --allow-staged --all-targets
-    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features tray
-    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features overlay
-    cargo clippy --fix --allow-dirty --allow-staged --all-targets --features tray,overlay
+    cargo clippy --fix --allow-dirty --allow-staged --all-targets --all-features
     cargo fmt
 
-bump-gpui:
-    bash scripts/bump-gpui.sh
+# Build the macOS .app (`cargo install cargo-bundle`). Pass `--features tray` for tray mode.
+# On Linux: `cargo bundle --release --format deb`.
+bundle *flags:
+    cargo bundle --release --format osx {{flags}}
 
-bundle:
-    cargo bundle --release
-    @echo "→ Bundle written under target/release/bundle/"
-
-open: bundle
+# Bundle, ad-hoc sign, quit the running copy, and replace it in /Applications.
+install *flags: (bundle flags)
     #!/usr/bin/env bash
     set -euo pipefail
-    app_path="$(find target/release/bundle/osx -maxdepth 1 -type d -name '*.app' -print -quit)"
-    if [[ -z "$app_path" ]]; then
-        echo "No .app bundle found under target/release/bundle/osx" >&2
-        exit 1
+    app="${CARGO_TARGET_DIR:-target}/release/bundle/osx/{% endraw %}{{app_name}}{% raw %}.app"
+    id="{% endraw %}{{bundle_qualifier}}.{{bundle_org}}.{{project-name}}{% raw %}"
+    dest="/Applications/$(basename "$app")"
+    [ -d "$app" ] || { echo "no bundle at $app" >&2; exit 1; }
+    # Never replace a different app that happens to have the same name.
+    if [ -e "$dest" ] && [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$dest/Contents/Info.plist" 2>/dev/null)" != "$id" ]; then
+        echo "$dest is not $id; not replacing it" >&2; exit 1
     fi
-    open "$app_path"
+    codesign --force --deep --sign - "$app"
+    running() { [ "$(osascript -e "application id \"$id\" is running" 2>/dev/null)" = true ]; }
+    if running; then
+        osascript -e "tell application id \"$id\" to quit"
+        for _ in $(seq 50); do running || break; sleep 0.1; done
+        if running; then echo "$id is still running; quit it and retry" >&2; exit 1; fi
+    fi
+    staging="$(mktemp -d /Applications/.install.XXXXXX)"
+    trap 'rm -rf -- "$staging"' EXIT
+    ditto "$app" "$staging/app"
+    if [ -e "$dest" ]; then mv "$dest" "$staging/old"; fi
+    if ! mv "$staging/app" "$dest"; then
+        if [ -e "$staging/old" ]; then mv "$staging/old" "$dest"; fi
+        echo "could not install $dest" >&2; exit 1
+    fi
+    echo "Installed $dest"
 
+# Regenerate assets/icon.png and assets/icon.icns from assets/icon-source.png (Pillow, iconutil).
 icon:
     python3 scripts/make-app-icon.py
 
+# Same, plus a freedesktop icon tree and .desktop entry under dist/linux/.
 icon-linux:
-    python3 scripts/make-app-icon.py --linux --web
+    python3 scripts/make-app-icon.py --linux
 {% endraw %}

@@ -1,103 +1,57 @@
 [package]
 name = "{{project-name}}"
 version = "0.1.0"
-edition = "2021"
-description = "An omakase native desktop app starter (macOS + Linux) on GPUI + gpui-component. Fork it, rename it, ship it."
+edition = "2024"
+# Keep equal to the channel in rust-toolchain.toml.
+rust-version = "1.100"
+description = "{{app_name}}: a native desktop app for macOS and Linux, built on GPUI."
 license = "0BSD"
-default-run = "{{project-name}}"
 
-[[bin]]
-name = "{{project-name}}"
-path = "src/main.rs"
-
-# Lint policy lives in the manifest (not just CI flags) so rust-analyzer and `cargo check` surface
-# the same rules CI enforces — zero feedback latency for an agent. Deck is a SINGLE crate (no
-# [workspace]), so these go directly under the package as [lints.rust] / [lints.clippy] — NOT
-# [workspace.lints] and NOT `[lints] workspace = true` (that indirection is only for multi-crate
-# workspaces). Rationale + the deliberately-rejected lints: docs/AGENTIC-ENGINEERING.md.
 [lints.rust]
-unused_must_use = "deny"  # an ignored Result from a fallible IO/serde call is a silent bug
-# deny, NOT forbid: Deck has zero unsafe today; deny still compiles and leaves a reviewed escape
-# hatch (// SAFETY: + scoped #[allow(unsafe_code)]) if a future objc2 bump needs raw unsafe in the
-# tray path. forbid cannot be locally overridden, so it would brick that build with no way out.
+unused_must_use = "deny"
+# deny, not forbid: a reviewed `#[allow(unsafe_code)]` with a `// SAFETY:` comment stays possible.
 unsafe_code = "deny"
 
 [lints.clippy]
-# priority = -1 is REQUIRED on a lint *group* so the individual lints below can still override it.
-# warn here (not deny) + `-D warnings` in CI is the reth/alloy convention: a toolchain bump that
-# adds new clippy lints then can't brick local `cargo build` — only CI goes red.
+# Warn locally, `-D warnings` in CI. Priority -1 lets the lints below override the group.
 all = { level = "warn", priority = -1 }
-todo = "deny"       # a stray todo!() left on a code path panics in production
-dbg_macro = "deny"  # dbg! debug noise left behind by an agent
+todo = "deny"
+dbg_macro = "deny"
 
 [dependencies]
-# Fresh GPUI, straight from Zed's git — the DEFAULT channel (Metal on macOS, wgpu on
-# Linux). `gpui-component` is developed against Zed's gpui HEAD, so the only way to pair
-# fresh gpui with the component kit is this matched git pair. Reproducibility comes from
-# the committed Cargo.lock (it pins exact commits); bump on a cadence with `just bump-gpui`.
-# Prefer the simpler-but-stale pure-crates.io pair instead? See docs/UPGRADING.md.
-gpui = { git = "https://github.com/zed-industries/zed" }
-# After Zed split gpui into multiple crates, the windowing + renderer backend (and the
-# `Application` bootstrap) live in `gpui_platform`.
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component" }
-# Prebuilt asset source: all gpui-component icon SVGs + bundled fonts.
-# Register it with `.with_assets(...)` so `IconName::*` renders.
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component" }
-
-# Preferences: serialize a Settings struct to the platform config dir.
+gpui-kit = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 directories = "6"
-
-# --- Optional: menu-bar / tray apps (`--features tray`) — cross-platform ---
-# tray-icon draws a native status item on every OS: NSStatusItem (macOS),
-# libappindicator / StatusNotifierItem (Linux), Shell_NotifyIcon (Windows).
-# There is no second renderer — your windows stay GPUI everywhere.
 tray-icon = { version = "0.24", optional = true }
+
+[dev-dependencies]
+# The test harness, for tests and examples/shot.rs. It stays out of the app binary.
+gpui-kit = { version = "0.11", features = ["test-support"] }
 
 [features]
 default = []
-tray = ["dep:tray-icon", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
-# Floating overlay surfaces (transparent always-on-top PopUp window). macOS-only
-# in v1; on Linux it compiles to a no-op (no LayerShell yet). Reuses the SAME
-# objc2 stack as `tray` (no new compiled crate) and adds raw-window-handle (rwh
-# 0.6 is already in the tree via gpui, so this is a `dep:` surfacing, not a new dep).
-overlay = ["dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation", "dep:raw-window-handle"]
+tray = ["dep:tray-icon", "dep:gtk"]
 
-# objc2 is only used to hide the macOS dock icon (tray) and harden the overlay
-# panel — pull it on macOS only, so a Linux/Windows `--features tray`/`overlay`
-# build never tries to compile Apple crates.
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.6", optional = true }
-objc2-app-kit = { version = "0.3", optional = true }
-objc2-foundation = { version = "0.3", optional = true }
-# Recover the raw NSView from a gpui Window to harden the overlay panel (objc2
-# bridge). rwh 0.6.2 is already in Cargo.lock via gpui — no new compiled crate.
-raw-window-handle = { version = "0.6", optional = true }
+# The Linux tray runs its own GTK loop (src/tray.rs).
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = { version = "0.18", optional = true }
 
 [profile.release]
 strip = true
 lto = "thin"
 codegen-units = 1
 
-# ---------------------------------------------------------------------------
-# `cargo bundle` config (batteries included). On macOS → Deck.app; cargo
-# bundle can also emit `deb` on Linux. Run `just bundle`.
-#   cargo install cargo-bundle
-# Rebrand: drop a 1024x1024 image at assets/icon-source.png, run `just icon`
-# (bakes the macOS squircle + builds icon.icns), then re-bundle.
-# ---------------------------------------------------------------------------
 [package.metadata.bundle]
-name = "{{project-name | title_case}}"
+name = "{{app_name}}"
 identifier = "{{bundle_qualifier}}.{{bundle_org}}.{{project-name}}"
 icon = ["assets/icon.icns"]
 category = "public.app-category.productivity"
-short_description = "A small, snappy native desktop app starter built on GPUI."
-long_description = "{{project-name | title_case}} — a native desktop app built on GPUI + gpui-component for macOS and Linux."
-osx_minimum_system_version = "11.0"
-# Ship the notices alongside the binary: Apache-2.0 §4 and ISC require their
-# notices to travel with redistributed binaries, so cargo-bundle copies these
-# into the .app / .deb.
-resources = ["NOTICE", "LICENSE"]
-copyright = "Copyright (c) 2026 {{project-name | title_case}} contributors. 0BSD. Bundles Apache-2.0/ISC third-party code; see NOTICE."
+short_description = "{{app_name}}"
+long_description = "{{app_name}}: a native desktop app built on GPUI for macOS and Linux."
+# Third-party licenses require their texts to ship with the app.
+resources = ["NOTICE", "LICENSE", "LICENSE-APACHE", "LICENSE-LUCIDE"]
+copyright = "Copyright (c) 2026 {{app_name}} contributors. 0BSD. Bundles Apache-2.0/ISC third-party code; see NOTICE."
+
+[package.metadata.bundle.macos]
+minimum_system_version = "11.0"

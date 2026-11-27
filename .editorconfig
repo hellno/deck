@@ -1,6 +1,3 @@
-# Deterministic whitespace/EOL/charset for the files rustfmt does NOT touch (YAML, TOML,
-# Markdown). Keeps an agent's edits to ci.yml / Cargo.toml / docs from producing whitespace-only
-# diffs that bury the real change. Honored by most editors + editor-integrated agents.
 root = true
 
 [*]

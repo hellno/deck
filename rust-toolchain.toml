@@ -1,8 +1,3 @@
-# Pinned to match Zed's toolchain. Zed's gpui (git channel) tracks recent stable APIs,
-# so building gpui from git needs the same version. Bump in lockstep with Zed's
-# rust-toolchain.toml when you bump the gpui revs (see docs/UPGRADING.md). The
-# pure-crates.io channel builds on plain stable; this pin is only required by the
-# default git channel.
 [toolchain]
-channel = "1.97.1"
+channel = "1.100.0"
 components = ["rustfmt", "clippy"]

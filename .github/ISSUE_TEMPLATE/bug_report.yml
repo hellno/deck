@@ -22,7 +22,7 @@ body:
       label: Steps to reproduce
       description: Minimal steps. A small diff or snippet helps a lot.
       placeholder: |
-        1. `cargo run --features overlay`
+        1. `cargo run --features tray`
         2. Click ...
         3. See ...
     validations:
@@ -47,16 +47,14 @@ body:
       options:
         - default
         - tray
-        - overlay
-        - tray,overlay
     validations:
       required: true
   - type: input
-    id: gpui-commit
+    id: gpui-kit-version
     attributes:
-      label: GPUI commit
-      description: The `gpui` commit from Cargo.lock (`grep -A2 'name = "gpui"' Cargo.lock`).
-      placeholder: "86effffd..."
+      label: gpui-kit version
+      description: From Cargo.lock (`grep -A1 'name = "gpui-kit"' Cargo.lock`).
+      placeholder: "0.11.0"
     validations:
       required: false
   - type: textarea
