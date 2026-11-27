@@ -15,11 +15,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Projects are generated into runner.temp, outside the checkout: cargo-generate deletes the
+# template's hook file when run from inside it, and 0.26 parses any Cargo.toml it finds walking
+# up from the destination (with `..` in the path, the template's own).
 env:
   CARGO_TERM_COLOR: always
-  # Rendered outside the checkout: a nested cargo project confuses cargo (rust-lang/cargo#9922),
-  # and cargo-generate run from inside the template deletes the template's hook file.
-  GEN: ${{ github.workspace }}/../gen
 
 permissions:
   contents: read
@@ -38,14 +38,14 @@ jobs:
           tool: cargo-generate,just
       - name: Generate a project from the template
         run: |
-          mkdir -p "$GEN" && cd "$GEN"
-          cargo generate --path "$GITHUB_WORKSPACE" --name deck-ci --silent --vcs none --destination "$GEN"
+          mkdir -p "$RUNNER_TEMP/gen" && cd "$RUNNER_TEMP/gen"
+          cargo generate --path "$GITHUB_WORKSPACE" --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
       # rust-toolchain.toml (copied into the project) pins the compiler; rustup installs it.
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          workspaces: ${{ env.GEN }}/deck-ci
+          workspaces: ${{ runner.temp }}/gen/deck-ci
       - name: just ci (fmt, clippy on both feature sets, test, build)
-        working-directory: ${{ env.GEN }}/deck-ci
+        working-directory: ${{ runner.temp }}/gen/deck-ci
         run: just ci
 
   linux:
@@ -67,13 +67,13 @@ jobs:
           tool: cargo-generate,just
       - name: Generate a project from the template
         run: |
-          mkdir -p "$GEN" && cd "$GEN"
-          cargo generate --path "$GITHUB_WORKSPACE" --name deck-ci --silent --vcs none --destination "$GEN"
+          mkdir -p "$RUNNER_TEMP/gen" && cd "$RUNNER_TEMP/gen"
+          cargo generate --path "$GITHUB_WORKSPACE" --name deck-ci --silent --vcs none --destination "$RUNNER_TEMP/gen"
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          workspaces: ${{ env.GEN }}/deck-ci
+          workspaces: ${{ runner.temp }}/gen/deck-ci
       - name: just ci (fmt, clippy on both feature sets, test, build)
-        working-directory: ${{ env.GEN }}/deck-ci
+        working-directory: ${{ runner.temp }}/gen/deck-ci
         run: just ci
 
   # Supply-chain gate on the generated project (the raw Cargo.toml has tokens), plus a check
@@ -87,15 +87,15 @@ jobs:
           tool: cargo-generate,cargo-deny
       - name: Generate "Catchy TV"
         run: |
-          mkdir -p "$GEN" && cd "$GEN"
-          cargo generate --path "$GITHUB_WORKSPACE" --name catchy-tv -d app_name="Catchy TV" --silent --vcs none --destination "$GEN"
+          mkdir -p "$RUNNER_TEMP/gen" && cd "$RUNNER_TEMP/gen"
+          cargo generate --path "$GITHUB_WORKSPACE" --name catchy-tv -d app_name="Catchy TV" --silent --vcs none --destination "$RUNNER_TEMP/gen"
       - name: Display name is verbatim, and no "Deck" leaks into the app
-        working-directory: ${{ env.GEN }}/catchy-tv
+        working-directory: ${{ runner.temp }}/gen/catchy-tv
         run: |
           grep -q 'APP_NAME: &str = "Catchy TV"' src/lib.rs
           grep -q '^# Catchy TV$' README.md
           grep -q 'Catchy TV contributors' LICENSE
           if grep -rIn -i '\bdeck\b' src examples Cargo.toml justfile AGENTS.md README.md docs scripts; then exit 1; fi
       - name: cargo-deny check
-        working-directory: ${{ env.GEN }}/catchy-tv
+        working-directory: ${{ runner.temp }}/gen/catchy-tv
         run: cargo deny --all-features check advisories bans sources licenses
